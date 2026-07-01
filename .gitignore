@@ -1,3 +1,5 @@
 /server
 /vibe-shop
+*.exe
 *.out
+.env

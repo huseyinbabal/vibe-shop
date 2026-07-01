@@ -1,14 +1,30 @@
 package http
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"vibe-shop/internal/product"
 )
 
+// fakeProductRepository is an in-memory stand-in so the router test doesn't
+// need a real database — only /health's behavior is under test here.
+type fakeProductRepository struct{}
+
+func (fakeProductRepository) List(ctx context.Context) ([]product.Product, error) {
+	return nil, nil
+}
+
+func (fakeProductRepository) GetByID(ctx context.Context, id uint) (product.Product, error) {
+	return product.Product{}, product.ErrNotFound
+}
+
 func TestNewRouter_Health(t *testing.T) {
-	srv := httptest.NewServer(NewRouter())
+	handler := product.NewHandler(fakeProductRepository{})
+	srv := httptest.NewServer(NewRouter(handler))
 	defer srv.Close()
 
 	res, err := http.Get(srv.URL + "/health")
