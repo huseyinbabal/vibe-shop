@@ -11,10 +11,13 @@ import (
 // ErrNotFound is returned when a product does not exist.
 var ErrNotFound = errors.New("product: not found")
 
-// Repository reads products from storage.
+// Repository reads and writes products in storage.
 type Repository interface {
 	List(ctx context.Context) ([]Product, error)
 	GetByID(ctx context.Context, id uint) (Product, error)
+	Create(ctx context.Context, p Product) (Product, error)
+	Update(ctx context.Context, p Product) (Product, error)
+	Delete(ctx context.Context, id uint) error
 }
 
 type gormRepository struct {
@@ -44,4 +47,34 @@ func (r *gormRepository) GetByID(ctx context.Context, id uint) (Product, error) 
 		return Product{}, fmt.Errorf("product: get by id: %w", err)
 	}
 	return p, nil
+}
+
+func (r *gormRepository) Create(ctx context.Context, p Product) (Product, error) {
+	if err := r.db.WithContext(ctx).Create(&p).Error; err != nil {
+		return Product{}, fmt.Errorf("product: create: %w", err)
+	}
+	return p, nil
+}
+
+func (r *gormRepository) Update(ctx context.Context, p Product) (Product, error) {
+	res := r.db.WithContext(ctx).Model(&Product{}).Where("id = ?", p.ID).
+		Select("name", "price").Updates(Product{Name: p.Name, Price: p.Price})
+	if res.Error != nil {
+		return Product{}, fmt.Errorf("product: update: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return Product{}, ErrNotFound
+	}
+	return p, nil
+}
+
+func (r *gormRepository) Delete(ctx context.Context, id uint) error {
+	res := r.db.WithContext(ctx).Delete(&Product{}, id)
+	if res.Error != nil {
+		return fmt.Errorf("product: delete: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }

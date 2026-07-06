@@ -22,6 +22,18 @@ func (fakeProductRepository) GetByID(ctx context.Context, id uint) (product.Prod
 	return product.Product{}, product.ErrNotFound
 }
 
+func (fakeProductRepository) Create(ctx context.Context, p product.Product) (product.Product, error) {
+	return p, nil
+}
+
+func (fakeProductRepository) Update(ctx context.Context, p product.Product) (product.Product, error) {
+	return product.Product{}, product.ErrNotFound
+}
+
+func (fakeProductRepository) Delete(ctx context.Context, id uint) error {
+	return product.ErrNotFound
+}
+
 func TestNewRouter_Health(t *testing.T) {
 	handler := product.NewHandler(fakeProductRepository{})
 	srv := httptest.NewServer(NewRouter(handler))
