@@ -114,3 +114,59 @@ Detaylar: [plan.md](./plan.md#dilim-2--ürün-okuma-apisi--şu-anki-dilim) · Sp
 - [x] **T17 — Kalite doğrulaması**
   - Doğrulama: `gofmt -l .` boş · `go vet ./...` temiz · `go test ./...` yeşil (Docker açık).
 - [ ] **CHECKPOINT I (final)** — İnsan onayı; dilim tamam.
+
+## Dilim 3 — Ürün Yazma API'si ← *şu anki dilim*
+
+Detaylar: [plan.md](./plan.md#dilim-3--ürün-yazma-apisi--şu-anki-dilim) · Spec: [../SPEC.md](../SPEC.md) §8
+
+### Faz 1 — Ürün domain'i: yazma yolları (test-first)
+- [x] **T18 — internal/product/model.go: Input + Validate**
+  - Yapılacak: `Input{Name string, Price float64}` tipi + `Validate() error` — `name` kırpılınca
+    boş olamaz ve ≤ 200 karakter; `price > 0`, en fazla iki ondalık (`math.Round(price*100)`
+    karşılaştırması), üst sınır `99_999_999.99`. Hata mesajları alan bazlı.
+  - Kabul: POST ve PUT'un paylaşacağı tek doğrulama noktası bu; `Product` struct'ı değişmez.
+  - Doğrulama: `go build ./internal/product/`.
+- [x] **T19 — internal/product/repository.go: Create/Update/Delete**
+  - Yapılacak: `Repository` arayüzüne `Create(ctx, Product) (Product, error)`,
+    `Update(ctx, Product) (Product, error)`, `Delete(ctx, id uint) error` eklenir; GORM
+    implementasyonunda Update/Delete `RowsAffected == 0` → `ErrNotFound`; hatalar
+    `fmt.Errorf("product: ...: %w", err)` ile sarmalanır.
+  - Kabul: read metodlarının deseniyle birebir aynı stil; ekstra SELECT yok.
+  - Doğrulama: `go build ./internal/product/`.
+- [x] **T20 — internal/product/handler.go: Create/Update/Delete metodları**
+  - Yapılacak: `Create` (`201` + oluşan ürün), `Update` (`200` + son hali), `Delete` (`204`,
+    boş gövde). Gövde `Input`'a decode edilir (`id` doğal olarak yok sayılır); geçersiz JSON →
+    `400 "invalid JSON body"`; `Validate` hatası → `400` + mesaj; sayısal olmayan id → `400`;
+    `ErrNotFound` → `404 "product not found"`; diğer → `500`. Mevcut `writeJSON`/`writeError`
+    kullanılır.
+  - Kabul: SPEC §8.1/§8.4 davranışlarıyla birebir uyum; yeni yanıt üretme yolu yok.
+  - Doğrulama: `go build ./internal/product/`.
+- [x] **T21 — internal/product/handler_test.go: yazma senaryoları**
+  - Yapılacak: SPEC §8.5 senaryoları — POST geçerli → `201` + `id`, ardından GET aynı ürünü döner;
+    POST geçersiz JSON / boş `name` / `price <= 0` / 200+ karakter `name` → `400`;
+    PUT var olan id → `200` + DB güncel, doğrulama hataları POST ile aynı → `400`;
+    PUT/DELETE olmayan id → `404`, sayısal olmayan id → `400`;
+    DELETE var olan id → `204` + boş gövde, ardından GET → `404`.
+    Yazma testleri kendi satırlarını oluşturur, seed satırlarına (id 1-2) dokunmaz,
+    `t.Cleanup` ile temizler; `TestList_ReturnsSeededProducts` "tam 2" yerine
+    "Widget ve Gadget mevcut" olarak gevşetilir.
+  - Kabul: testler sıradan bağımsız; mock repository yok, gerçek Postgres'e karşı.
+  - Doğrulama: `go test ./internal/product/` (Docker gerekli) yeşil.
+- [x] **CHECKPOINT J** — `go test ./internal/product/` yeşil (Docker açık olmalı).
+
+### Faz 2 — Kablolama
+- [x] **T22 — internal/http/router.go + router_test.go**
+  - Yapılacak: `"POST /api/products"` → `products.Create`, `"PUT /api/products/{id}"` →
+    `products.Update`, `"DELETE /api/products/{id}"` → `products.Delete` rotaları eklenir;
+    `NewRouter` imzası değişmez. Router testine yeni rotaların bağlandığını gösteren
+    asgari kontroller eklenir (sahte repository ile, DB'siz).
+  - Kabul: health ve GET rotaları davranış değiştirmez.
+  - Doğrulama: `go build ./internal/http/` ve `go test ./internal/http/` yeşil.
+- [x] **CHECKPOINT K** — Uçtan uca: `docker compose up -d` + `go run ./cmd/server`;
+  `curl -X POST` → `201` + listede görünür; `curl -X PUT` → `200` + değişiklik yansır;
+  `curl -X DELETE` → `204` + ardından `GET` → `404`; `/health` → `{"status":"ok"}`.
+
+### Faz 3 — Kalite kapısı
+- [x] **T23 — Kalite doğrulaması**
+  - Doğrulama: `gofmt -l .` boş · `go vet ./...` temiz · `go test ./...` yeşil (Docker açık).
+- [ ] **CHECKPOINT L (final)** — İnsan onayı; dilim tamam.

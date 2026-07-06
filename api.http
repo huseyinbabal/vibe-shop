@@ -1,0 +1,67 @@
+# vibe-shop API örnekleri — VS Code REST Client / IntelliJ HTTP Client ile çalıştırılabilir.
+# Önkoşul: `docker compose up -d` + migration + `go run ./cmd/server` (bkz. SPEC.md §7.2).
+
+@baseUrl = http://localhost:8080
+
+### Sağlık kontrolü → 200 {"status":"ok"}
+GET {{baseUrl}}/health
+
+### Ürünleri listele → 200, JSON dizi
+GET {{baseUrl}}/api/products
+
+### Tek ürün getir → 200
+GET {{baseUrl}}/api/products/1
+
+### Olmayan ürün → 404 {"error":"product not found"}
+GET {{baseUrl}}/api/products/9999
+
+### Geçersiz id → 400 {"error":"invalid product id"}
+GET {{baseUrl}}/api/products/not-a-number
+
+### Ürün ekle → 201, oluşturulan ürün (id dahil)
+POST {{baseUrl}}/api/products
+Content-Type: application/json
+
+{"name": "Tabak", "price": 49.90}
+
+### Ürün ekle — gövdedeki id yok sayılır → 201, sunucu id üretir
+POST {{baseUrl}}/api/products
+Content-Type: application/json
+
+{"id": 424242, "name": "Vazo", "price": 10}
+
+### Ürün ekle — boş name → 400 {"error":"name must not be empty"}
+POST {{baseUrl}}/api/products
+Content-Type: application/json
+
+{"name": "", "price": 10}
+
+### Ürün ekle — price <= 0 → 400 {"error":"price must be greater than zero"}
+POST {{baseUrl}}/api/products
+Content-Type: application/json
+
+{"name": "Fincan", "price": 0}
+
+### Ürün ekle — ikiden fazla ondalık → 400 {"error":"price must have at most two decimal places"}
+POST {{baseUrl}}/api/products
+Content-Type: application/json
+
+{"name": "Fincan", "price": 9.999}
+
+### Ürün güncelle (tam güncelleme) → 200, son hali
+PUT {{baseUrl}}/api/products/4
+Content-Type: application/json
+
+{"name": "Tabak", "price": 59.90}
+
+### Olmayan ürünü güncelle → 404 {"error":"product not found"}
+PUT {{baseUrl}}/api/products/9999
+Content-Type: application/json
+
+{"name": "Hayalet", "price": 10}
+
+### Ürün sil → 204, boş gövde
+DELETE {{baseUrl}}/api/products/3
+
+### Olmayan ürünü sil → 404 {"error":"product not found"}
+DELETE {{baseUrl}}/api/products/9999
