@@ -22,7 +22,7 @@ GET {{baseUrl}}/api/products/not-a-number
 POST {{baseUrl}}/api/products
 Content-Type: application/json
 
-{"name": "Kahve Fincanı", "price": 249.90}
+{"name": "Tabak", "price": 49.90}
 
 ### Ürün ekle — gövdedeki id yok sayılır → 201, sunucu id üretir
 POST {{baseUrl}}/api/products
@@ -49,10 +49,10 @@ Content-Type: application/json
 {"name": "Fincan", "price": 9.999}
 
 ### Ürün güncelle (tam güncelleme) → 200, son hali
-PUT {{baseUrl}}/api/products/1
+PUT {{baseUrl}}/api/products/4
 Content-Type: application/json
 
-{"name": "Kahve Fincanı", "price": 199.90}
+{"name": "Tabak", "price": 59.90}
 
 ### Olmayan ürünü güncelle → 404 {"error":"product not found"}
 PUT {{baseUrl}}/api/products/9999
@@ -61,7 +61,7 @@ Content-Type: application/json
 {"name": "Hayalet", "price": 10}
 
 ### Ürün sil → 204, boş gövde
-DELETE {{baseUrl}}/api/products/1
+DELETE {{baseUrl}}/api/products/3
 
 ### Olmayan ürünü sil → 404 {"error":"product not found"}
 DELETE {{baseUrl}}/api/products/9999

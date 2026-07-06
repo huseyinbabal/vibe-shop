@@ -28,7 +28,7 @@ Detaylı görev listesi: [todo.md](./todo.md).
 
 ---
 
-## Dilim 2 — Ürün Okuma API'si ← *şu anki dilim*
+## Dilim 2 — Ürün Okuma API'si ✅ tamamlandı
 
 > Kaynak: [SPEC.md §7](../SPEC.md). Kapsam: **local Postgres (Docker) + GORM ile
 > `GET /api/products` ve `GET /api/products/{id}`**. Sepet/sipariş bu dilimde YOK.
@@ -141,5 +141,110 @@ domain'i test-first inşa edilir (T11-T14); son olarak kablolama (T15-T16) ve ka
 - GORM dışında ORM/query builder.
 - `/api/products` dışında endpoint (sepet/sipariş).
 - `docker-compose.yml`'i production için genişletme.
+
+Detaylı görev listesi: [todo.md](./todo.md).
+
+---
+
+## Dilim 3 — Ürün Yazma API'si ← *şu anki dilim*
+
+> Kaynak: [SPEC.md §8](../SPEC.md). Kapsam: **`POST /api/products`, `PUT /api/products/{id}`,
+> `DELETE /api/products/{id}` — doğrulamayla birlikte, read API ile aynı tarzda**.
+> Sepet/sipariş/PATCH/auth bu dilimde YOK.
+
+### Mimari Kararlar
+
+- **Girdi tipi + tek yerde doğrulama:** İstek gövdesi `Product`'a değil, ayrı bir
+  `Input{Name string, Price float64}` tipine decode edilir; `Input.Validate() error`
+  alan bazlı mesaj döner (örn. `"name must not be empty"`). POST ve PUT aynı tipi ve
+  aynı `Validate`'i kullanır — kural kopyası yok (SPEC §8.6).
+- **Doğrulama kuralları:** `name` kırpılınca boş olamaz, ≤ 200 karakter; `price > 0`,
+  en fazla iki ondalık (`math.Round(price*100)` karşılaştırmasıyla), üst sınır
+  `99_999_999.99` (DB sütunu `NUMERIC(10,2)` taşmasın, DB hatası yerine `400` dönsün).
+- **Repository genişlemesi:** `Create(ctx, Product) (Product, error)`,
+  `Update(ctx, Product) (Product, error)`, `Delete(ctx, id uint) error`. Update/Delete
+  GORM `RowsAffected == 0` durumunda `ErrNotFound` döner — handler mevcut `errors.Is`
+  desenini aynen kullanır; ekstra SELECT yok.
+- **Handler tarzı korunur:** Yeni `Create/Update/Delete` metodları mevcut
+  `writeJSON`/`writeError` yardımcılarını kullanır. Geçersiz JSON → `400 "invalid JSON body"`;
+  doğrulama hatası → `400` + `Validate`'in mesajı; sayısal olmayan id → `400`;
+  `ErrNotFound` → `404 "product not found"`; diğer → `500`. Gövdedeki `id` yok sayılır
+  (decode hedefi `Input` olduğu için doğal olarak).
+- **Test izolasyonu (kritik):** Paket, tek paylaşılan container + sabit seed (Widget/Gadget)
+  kullanıyor ve `TestList` şu an **tam 2 ürün** bekliyor. Yazma testleri eklenince bu kırılgan
+  olur (test sırası garanti değil). Karar: (a) yazma testleri kendi satırlarını oluşturur,
+  seed satırlarına (id 1-2) asla dokunmaz, `t.Cleanup` ile kendi satırlarını siler;
+  (b) `TestList_ReturnsSeededProducts` "tam 2" yerine "Widget ve Gadget listede var"
+  şeklinde gevşetilir. Böylece testler sıradan bağımsız kalır.
+- **Router imzası değişmiyor:** `NewRouter(products *product.Handler)` aynı kalır; yalnızca
+  üç yeni rota eklenir (`"POST /api/products"`, `"PUT /api/products/{id}"`,
+  `"DELETE /api/products/{id}"`).
+
+### Bağımlılık Grafiği
+
+```
+internal/product/model.go — Input + Validate (T18)
+        │
+        ▼
+internal/product/repository.go — Create/Update/Delete (T19)
+        │
+        ▼
+internal/product/handler.go — Create/Update/Delete metodları (T20)
+        │
+        ▼
+internal/product/handler_test.go — yazma senaryoları + TestList gevşetme (T21)
+        │
+        ▼
+              CHECKPOINT J (go test ./internal/product/ yeşil, Docker gerekli)
+
+internal/http/router.go + router_test.go — 3 yeni rota (T22)
+        │
+        ▼
+              CHECKPOINT K (uçtan uca: docker compose + go run + curl POST/PUT/DELETE)
+
+Kalite kapısı (T23)
+        │
+        ▼
+              CHECKPOINT L (final, insan onayı)
+```
+
+### Dikey Dilimleme Yaklaşımı
+
+Üç uç tek dikey yolda ilerler: **istek → router → handler → doğrulama → repository →
+Postgres → JSON yanıt**. Domain katmanı (T18-T21) test-first tamamlanır; kablolama (T22)
+ve kalite kapısı (T23) sona kalır. `main.go` ve `internal/db` değişmez — handler zaten
+kablolu, yalnızca yeni metotlar rotalara bağlanır.
+
+### Fazlar ve Checkpoint'ler
+
+#### Faz 1 — Ürün domain'i: yazma yolları (test-first)
+- **T18** `internal/product/model.go` — `Input` tipi + `Validate()`.
+- **T19** `internal/product/repository.go` — arayüz + GORM impl. genişler.
+- **T20** `internal/product/handler.go` — `Create`, `Update`, `Delete` metodları.
+- **T21** `internal/product/handler_test.go` — SPEC §8.5'teki tüm senaryolar + `TestList` gevşetme.
+- **CHECKPOINT J:** `go test ./internal/product/` yeşil (Docker açık).
+
+#### Faz 2 — Kablolama
+- **T22** `internal/http/router.go` + `router_test.go` — POST/PUT/DELETE rotaları.
+- **CHECKPOINT K:** Uçtan uca manuel doğrulama — `docker compose up -d` + `go run ./cmd/server`;
+  `curl -X POST` → `201` + listede görünür; `curl -X PUT` → `200` + değişiklik yansır;
+  `curl -X DELETE` → `204` + ardından `GET` → `404`; `/health` hâlâ `{"status":"ok"}`.
+
+#### Faz 3 — Kalite kapısı
+- **T23** Tüm doğrulamalar: `gofmt -l .` boş, `go vet ./...` temiz, `go test ./...` yeşil (Docker açık).
+- **CHECKPOINT L (final):** İnsan onayı → dilim tamam.
+
+### Riskler
+
+| Risk | Etki | Önlem |
+|------|------|-------|
+| Yazma testleri paylaşılan seed veriyi bozar, testler sıraya bağımlı hale gelir | Orta | Mimari karar: kendi satırını oluştur + `t.Cleanup` + `TestList` gevşetme (T21) |
+| `float64` ile ondalık hassasiyeti (örn. `199.90` → `199.89999…`) | Düşük | İki-ondalık kontrolü `math.Round` toleransıyla; DB zaten `NUMERIC(10,2)`'ye yuvarlar |
+| `NUMERIC(10,2)` taşması DB hatası → yanlışlıkla `500` | Düşük | Üst sınır doğrulaması `Validate` içinde → `400` (T18) |
+
+### Kapsam Dışı (bilerek, SPEC §8.6 ile uyumlu)
+- `PATCH` / kısmi güncelleme, soft-delete, optimistic locking.
+- Kimlik doğrulama/yetkilendirme, bulk uçlar.
+- Model/migration değişikliği, read API davranış değişikliği.
 
 Detaylı görev listesi: [todo.md](./todo.md).

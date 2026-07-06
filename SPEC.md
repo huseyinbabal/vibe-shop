@@ -15,9 +15,10 @@
 
 ### Yol haritası
 1. **İskelet + /health** ✅ tamamlandı
-2. **Ürün okuma API'si** (`GET /api/products`, `GET /api/products/:id`) ← *şu anki dilim, bkz. §7*
-3. Sepet (`POST /cart`, ...)
-4. Sipariş (`POST /orders`, ...)
+2. **Ürün okuma API'si** (`GET /api/products`, `GET /api/products/:id`) ✅ tamamlandı, bkz. §7
+3. **Ürün yazma API'si** (`POST`, `PUT`, `DELETE /api/products`) ← *şu anki dilim, bkz. §8*
+4. Sepet (`POST /cart`, ...)
+5. Sipariş (`POST /orders`, ...)
 
 ## 2. Komutlar (Commands)
 
@@ -196,3 +197,99 @@ vibe-shop/
 - `docker-compose.yml`'i production deploy konfigürasyonu olarak kullanma/genişletme (sadece local dev).
 - Gerçek kimlik bilgilerini/secret'ları `docker-compose.yml` veya repoya commit etme (dev-only
   sabit şifre bu dilimde kabul edilebilir çünkü sadece localhost'ta çalışır).
+
+---
+
+## 8. Dilim 3 — Ürün Yazma API'si (Products Write API)
+
+### 8.1 Amaç
+
+Ürünler artık sadece okunmakla kalmaz; eklenir, güncellenir ve silinir. Tüm uçlar
+Dilim 2'deki read API ile **aynı tarzda** çalışır: aynı `Handler`/`Repository` deseni,
+aynı `writeJSON`/`writeError` yardımcıları, aynı `{"error":"..."}` hata gövdesi,
+aynı GORM + Postgres altyapısı, aynı `http.ServeMux` desen rotaları.
+
+| Metot & Yol | Başarı | Gövde (istek → yanıt) |
+|---|---|---|
+| `POST /api/products` | `201` | `{"name","price"}` → oluşturulan ürün (`id` dahil) |
+| `PUT /api/products/{id}` | `200` | `{"name","price"}` → güncellenen ürünün son hali (tam güncelleme) |
+| `DELETE /api/products/{id}` | `204` | — → boş gövde |
+
+**Doğrulama (POST ve PUT'ta birebir aynı):**
+- `name`: zorunlu; boşluklar kırpıldıktan sonra boş olamaz; en fazla 200 karakter.
+- `price`: zorunlu; `> 0`; en fazla iki ondalık basamak (DB sütunu `numeric(10,2)` ile uyum).
+- Gövdedeki `id` alanı yok sayılır; `id` yalnızca path'ten ve DB'den gelir.
+- Geçersiz JSON gövde → `400`. Doğrulama hatası → `400` + hangi alanın neden geçersiz
+  olduğunu söyleyen `{"error":"..."}` mesajı.
+- Sayısal olmayan `{id}` → `400`; var olmayan `{id}` (PUT/DELETE) → `404` + `{"error":"product not found"}`
+  (read API'deki davranışla aynı).
+
+**Başarı ölçütü:** Local Postgres ayaktayken (`docker compose up -d`) sunucu çalışır;
+`curl -X POST` ile eklenen ürün `GET /api/products`'ta görünür, `PUT` ile güncellenen
+alanlar `GET /api/products/{id}`'de yansır, `DELETE` sonrası aynı id `404` döner;
+`go test ./...` (Docker + testcontainers ile) yeşil.
+
+### 8.2 Komutlar (ek)
+
+| Komut | Amaç |
+|-------|------|
+| `curl -s -X POST localhost:8080/api/products -d '{"name":"Fincan","price":249.90}'` | Ürün ekler → `201` |
+| `curl -s -X PUT localhost:8080/api/products/1 -d '{"name":"Fincan","price":199.90}'` | Ürünü günceller → `200` |
+| `curl -s -X DELETE localhost:8080/api/products/1 -i` | Ürünü siler → `204` |
+
+### 8.3 Proje Yapısı (ek)
+
+Yeni dosya gerekmez; mevcut `internal/product` paketi genişletilir:
+
+```
+internal/product/
+  model.go          # Product struct (değişmez) + istek DTO'su ve doğrulama kuralları
+  repository.go     # Repository arayüzüne Create/Update/Delete eklenir (GORM impl. dahil)
+  handler.go        # Create/Update/Delete handler metotları eklenir
+  handler_test.go   # yeni uçların testcontainers tabanlı testleri eklenir
+internal/http/
+  router.go         # POST/PUT/DELETE rotaları eklenir
+```
+
+### 8.4 Kod Stili (ek/değişiklik)
+
+- `Repository` arayüzü genişler: `Create(ctx, Product) (Product, error)`,
+  `Update(ctx, Product) (Product, error)`, `Delete(ctx, id uint) error`.
+  Update/Delete, satır yoksa `ErrNotFound` döner (read API'deki desenle aynı).
+- İstek gövdesi ayrı bir girdi tipine decode edilir (örn. `productInput{Name, Price}`);
+  doğrulama bu tip üzerinde tek bir yerde yapılır ki POST ve PUT aynı kuralları paylaşsın.
+- Handler'lar `writeJSON`/`writeError` yardımcılarını kullanmaya devam eder; yeni yanıt
+  üretme yolu eklenmez.
+- Rotalar `http.ServeMux` desenleriyle bağlanır: `"POST /api/products"`,
+  `"PUT /api/products/{id}"`, `"DELETE /api/products/{id}"`.
+- GORM kullanımı `internal/db` ve `internal/product` ile sınırlı kalmaya devam eder;
+  `internal/health` ve `internal/http` stdlib-only kalır.
+
+### 8.5 Test Stratejisi (ek)
+
+- Mevcut testcontainers düzeni aynen kullanılır; mock repository ile "yeşil" gösterme yok.
+- `internal/product/handler_test.go`'ya eklenecek senaryolar:
+  - `POST` geçerli gövde → `201`, yanıtta `id` var; ardından `GET /api/products/{id}` aynı ürünü döner.
+  - `POST` geçersiz JSON → `400`; boş/boşluk `name` → `400`; `price <= 0` → `400`;
+    200 karakterden uzun `name` → `400`.
+  - `PUT` var olan id + geçerli gövde → `200`, yanıt ve DB güncel; doğrulama hataları POST ile aynı → `400`.
+  - `PUT`/`DELETE` olmayan id → `404` + JSON hata gövdesi; sayısal olmayan id → `400`.
+  - `DELETE` var olan id → `204` + boş gövde; ardından `GET` aynı id → `404`.
+- **Geçiş ölçütü:** `go test ./...` (Docker mevcutken) yeşil, `go vet ./...` temiz, `gofmt -l .` boş.
+
+### 8.6 Sınırlar (ek/değişiklik)
+
+**Her zaman yap (ek):**
+- Doğrulama kurallarını POST ve PUT'ta tek bir ortak yerden uygula; iki kopya kural tutma.
+- Yazma uçlarında da hata gövdesini `{"error":"..."}` formatında dön.
+- İstemciden gelen `id`'yi asla yazma işleminde kullanma (path hariç).
+
+**Önce sor (ek):**
+- `PATCH` (kısmi güncelleme) eklemeden önce — bu dilim yalnızca tam `PUT` içerir.
+- Ürün modeline/migration'a yeni alan eklemeden önce.
+- Soft-delete, versiyonlama veya optimistic locking gibi davranışlar eklemeden önce.
+
+**Asla yapma (ek):**
+- Kimlik doğrulama/yetkilendirme ekleme (ileriki dilim; uçlar şimdilik korumasız ve bu bilinçli).
+- Toplu (bulk) ekleme/silme uçları ekleme.
+- Read API'nin mevcut davranışını (`GET` uçları, hata formatı, model alanları) değiştirme.
