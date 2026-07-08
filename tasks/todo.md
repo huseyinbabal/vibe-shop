@@ -198,7 +198,7 @@ Detaylar: [plan.md](./plan.md#dilim-4--auth--sepet--sipariş--şu-anki-dilim) ·
   - Doğrulama: `go build ./internal/auth/` · `internal/auth/repository_test.go` (testcontainers, users migration) yeşil.
   - Dosyalar: `migrations/0002_create_users.sql`, `internal/auth/model.go`, `repository.go`, `repository_test.go`. **Kapsam: M**
   - Bağımlılık: T24.
-- [ ] **T26 — JWT + auth middleware**
+- [x] **T26 — JWT + auth middleware**
   - Yapılacak: `internal/auth/token.go` — golang-jwt/jwt/v5 ile secret+ttl'e bağlı `Issue(userID uint)
     (string,error)` ve `Parse(tokenStr string)(uint,error)` (HS256, `sub`, `exp`).
     `internal/auth/middleware.go` — `RequireAuth`: `Authorization: Bearer` oku → `Parse` → başarıda
