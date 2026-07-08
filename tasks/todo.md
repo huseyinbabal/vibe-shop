@@ -220,12 +220,12 @@ Detaylar: [plan.md](./plan.md#dilim-4--auth--sepet--sipariş--şu-anki-dilim) ·
   - Doğrulama: `internal/auth/handler_test.go` (testcontainers) tüm senaryolar yeşil · `go build ./...`.
   - Dosyalar: `internal/auth/handler.go`, `handler_test.go`, `internal/http/router.go`, `cmd/server/main.go`. **Kapsam: M**
   - Bağımlılık: T25, T26.
-- [ ] **CHECKPOINT M** — Uçtan uca: `make start` (veya `docker compose up -d` + migrationlar +
+- [x] **CHECKPOINT M** — Uçtan uca: `make start` (veya `docker compose up -d` + migrationlar +
   `JWT_SECRET=dev-secret ... go run ./cmd/server`); `curl register` → `201`; `curl login` →
   `{"token":...}`; token'sız `POST /api/cart` (henüz yoksa geçici korumalı bir uçla) → `401`.
 
 ### Faz 2 — Sepet dikey dilimi
-- [ ] **T28 — cart şeması + cart repository**
+- [x] **T28 — cart şeması + cart repository**
   - Yapılacak: `migrations/0003_create_cart.sql` — `cart(id, user_id INT NOT NULL REFERENCES
     users(id), product_id INT NOT NULL REFERENCES products(id), quantity INT NOT NULL CHECK
     (quantity>0), UNIQUE(user_id, product_id))`. `internal/cart/model.go` — `CartItem` +
