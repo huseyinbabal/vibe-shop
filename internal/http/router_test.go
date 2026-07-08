@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"vibe-shop/internal/auth"
+	"vibe-shop/internal/cart"
 	"vibe-shop/internal/product"
 )
 
@@ -24,12 +25,29 @@ func (fakeAuthRepository) GetByEmail(ctx context.Context, email string) (auth.Us
 	return auth.User{}, auth.ErrNotFound
 }
 
+// fakeCartRepository keeps the router test database-free.
+type fakeCartRepository struct{}
+
+func (fakeCartRepository) AddOrIncrement(ctx context.Context, userID, productID uint, quantity int) (cart.Item, error) {
+	return cart.Item{}, nil
+}
+
+func (fakeCartRepository) ListByUser(ctx context.Context, userID uint) ([]cart.LineView, error) {
+	return nil, nil
+}
+
+func (fakeCartRepository) ClearByUser(ctx context.Context, userID uint) error {
+	return nil
+}
+
 // newTestRouter wires the router with fake repositories so tests exercise
 // routing without a real database.
 func newTestRouter() http.Handler {
 	products := product.NewHandler(fakeProductRepository{})
-	authH := auth.NewHandler(fakeAuthRepository{}, auth.NewTokenManager("test-secret", time.Hour))
-	return NewRouter(products, authH)
+	tokens := auth.NewTokenManager("test-secret", time.Hour)
+	authH := auth.NewHandler(fakeAuthRepository{}, tokens)
+	cartH := cart.NewHandler(fakeCartRepository{})
+	return NewRouter(products, authH, cartH, tokens.RequireAuth)
 }
 
 // fakeProductRepository is an in-memory stand-in so the router test doesn't

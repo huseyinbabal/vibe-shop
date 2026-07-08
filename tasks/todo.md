@@ -237,7 +237,7 @@ Detaylar: [plan.md](./plan.md#dilim-4--auth--sepet--sipariş--şu-anki-dilim) ·
   - Doğrulama: `repository_test.go` (testcontainers: products+users+cart, seed ürün+kullanıcı) — increment, izolasyon, olmayan ürün — yeşil.
   - Dosyalar: `migrations/0003_create_cart.sql`, `internal/cart/model.go`, `repository.go`, `repository_test.go`. **Kapsam: M**
   - Bağımlılık: T25 (users), 0001_products.
-- [ ] **T29 — cart handler + rotalar**
+- [x] **T29 — cart handler + rotalar**
   - Yapılacak: `internal/cart/handler.go` — `cartInput{ProductID uint, Quantity int}`; `Add`:
     `userID` context'ten, `quantity>0` değilse `400`, olmayan ürün → `404`, başarı `201` + kalem.
     `Get`: `userID` context'ten, `repo.ListByUser`, `200` + `{items,total}`. `router.go`'ya auth
@@ -246,7 +246,7 @@ Detaylar: [plan.md](./plan.md#dilim-4--auth--sepet--sipariş--şu-anki-dilim) ·
   - Doğrulama: `handler_test.go` (testcontainers, iki kullanıcı/token dahil izolasyon) yeşil · `go build ./...`.
   - Dosyalar: `internal/cart/handler.go`, `handler_test.go`, `internal/http/router.go`, `cmd/server/main.go`. **Kapsam: M**
   - Bağımlılık: T26 (mw), T28.
-- [ ] **CHECKPOINT N** — Uçtan uca: register→login→`POST /api/cart`→`GET /api/cart` doğru toplam;
+- [x] **CHECKPOINT N** (entegrasyon testleriyle kanıtlandı; canlı smoke CHECKPOINT O ile) — Uçtan uca: register→login→`POST /api/cart`→`GET /api/cart` doğru toplam;
   ikinci kullanıcı izolasyonu; token'sız `401`.
 
 ### Faz 3 — Sipariş dikey dilimi

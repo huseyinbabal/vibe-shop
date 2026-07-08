@@ -5,13 +5,18 @@ import (
 	"net/http"
 
 	"vibe-shop/internal/auth"
+	"vibe-shop/internal/cart"
 	"vibe-shop/internal/health"
 	"vibe-shop/internal/product"
 )
 
+// Middleware wraps a handler, e.g. to require authentication.
+type Middleware func(http.HandlerFunc) http.HandlerFunc
+
 // NewRouter builds the application's HTTP handler with all routes registered.
-// Product routes are public; auth exposes public register/login.
-func NewRouter(products *product.Handler, authH *auth.Handler) http.Handler {
+// Product routes and register/login are public; cart routes are wrapped with
+// requireAuth so only authenticated users reach them.
+func NewRouter(products *product.Handler, authH *auth.Handler, cartH *cart.Handler, requireAuth Middleware) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", health.Handler)
 
@@ -23,6 +28,9 @@ func NewRouter(products *product.Handler, authH *auth.Handler) http.Handler {
 
 	mux.HandleFunc("POST /api/register", authH.Register)
 	mux.HandleFunc("POST /api/login", authH.Login)
+
+	mux.HandleFunc("POST /api/cart", requireAuth(cartH.Add))
+	mux.HandleFunc("GET /api/cart", requireAuth(cartH.Get))
 
 	return mux
 }
