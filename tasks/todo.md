@@ -208,7 +208,7 @@ Detaylar: [plan.md](./plan.md#dilim-4--auth--sepet--sipariş--şu-anki-dilim) ·
   - Doğrulama: `token_test.go` (container'sız — round-trip, expired, tampered, malformed) + `middleware_test.go` (header yok→401, bozuk→401, geçerli→context+next) yeşil.
   - Dosyalar: `internal/auth/token.go`, `token_test.go`, `middleware.go`, `middleware_test.go`. **Kapsam: M**
   - Bağımlılık: T24.
-- [ ] **T27 — register/login handler + kablolama**
+- [x] **T27 — register/login handler + kablolama**
   - Yapılacak: `internal/auth/handler.go` — `registerInput{Email,Password}`, `loginInput{...}`.
     `Register`: email boş değil/`@` içerir, parola ≥ 8 (aksi `400`); bcrypt hash; `repo.Create`;
     duplicate → `409 {"error":"email already registered"}`; başarı `201 {"id","email"}`.

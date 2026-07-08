@@ -6,9 +6,31 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"vibe-shop/internal/auth"
 	"vibe-shop/internal/product"
 )
+
+// fakeAuthRepository keeps the router test database-free; only routing is under
+// test here, not registration or login behavior.
+type fakeAuthRepository struct{}
+
+func (fakeAuthRepository) Create(ctx context.Context, u auth.User) (auth.User, error) {
+	return u, nil
+}
+
+func (fakeAuthRepository) GetByEmail(ctx context.Context, email string) (auth.User, error) {
+	return auth.User{}, auth.ErrNotFound
+}
+
+// newTestRouter wires the router with fake repositories so tests exercise
+// routing without a real database.
+func newTestRouter() http.Handler {
+	products := product.NewHandler(fakeProductRepository{})
+	authH := auth.NewHandler(fakeAuthRepository{}, auth.NewTokenManager("test-secret", time.Hour))
+	return NewRouter(products, authH)
+}
 
 // fakeProductRepository is an in-memory stand-in so the router test doesn't
 // need a real database — only /health's behavior is under test here.
@@ -35,8 +57,7 @@ func (fakeProductRepository) Delete(ctx context.Context, id uint) error {
 }
 
 func TestNewRouter_Health(t *testing.T) {
-	handler := product.NewHandler(fakeProductRepository{})
-	srv := httptest.NewServer(NewRouter(handler))
+	srv := httptest.NewServer(newTestRouter())
 	defer srv.Close()
 
 	res, err := http.Get(srv.URL + "/health")
@@ -60,8 +81,7 @@ func TestNewRouter_Health(t *testing.T) {
 // request reaches the product handler (status comes from handler logic, not a
 // mux-level 404/405). The fake repository keeps the test database-free.
 func TestNewRouter_ProductWriteRoutes(t *testing.T) {
-	handler := product.NewHandler(fakeProductRepository{})
-	srv := httptest.NewServer(NewRouter(handler))
+	srv := httptest.NewServer(newTestRouter())
 	defer srv.Close()
 
 	client := srv.Client()
