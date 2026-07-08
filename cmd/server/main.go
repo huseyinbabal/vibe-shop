@@ -8,7 +8,9 @@ import (
 
 	"vibe-shop/internal/db"
 	apphttp "vibe-shop/internal/http"
+	"vibe-shop/internal/migrate"
 	"vibe-shop/internal/product"
+	"vibe-shop/migrations"
 )
 
 const addr = ":8080"
@@ -22,6 +24,10 @@ func main() {
 	gormDB, err := db.Connect(dsn)
 	if err != nil {
 		log.Fatalf("connect to database: %v", err)
+	}
+
+	if err := migrate.Run(gormDB, migrations.FS); err != nil {
+		log.Fatalf("run migrations: %v", err)
 	}
 
 	products := product.NewHandler(product.NewRepository(gormDB))

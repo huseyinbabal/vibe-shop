@@ -124,8 +124,7 @@ Testlerde ayrı olarak **testcontainers-go** kullanılır (§7.5) — ikisi birb
 |-------|------|
 | `docker compose up -d` | Local Postgres container'ını ayağa kaldırır (bkz. `docker-compose.yml`) |
 | `docker compose down -v` | Container'ı ve verisini siler (temiz sıfırlama) |
-| `psql "$DATABASE_URL" -f migrations/0001_create_products.sql` | `products` tablosunu oluşturur |
-| `DATABASE_URL=postgres://vibeshop:vibeshop@localhost:5432/vibeshop?sslmode=disable go run ./cmd/server` | Sunucuyu local Postgres container'ına bağlı başlatır |
+| `DATABASE_URL=postgres://vibeshop:vibeshop@localhost:5432/vibeshop?sslmode=disable go run ./cmd/server` | Sunucuyu başlatır; açılışta bekleyen migration'ları otomatik uygular (bkz. §7.7), sonra 8080'de dinler |
 | `go test ./...` | Testleri çalıştırır (testcontainers için Docker gerektirir) |
 
 ### 7.3 Proje Yapısı (ek)
@@ -135,10 +134,14 @@ vibe-shop/
   docker-compose.yml           # local Postgres container (dev-only)
   .env.example                 # DATABASE_URL örneği (docker-compose ile eşleşir)
   migrations/
+    embed.go                   # *.sql dosyalarını binary'e gömer (//go:embed)
     0001_create_products.sql   # products tablosu şeması (id, name, price)
   internal/
     db/
       db.go                    # DATABASE_URL'den GORM bağlantısı kurar
+    migrate/
+      migrate.go               # açılışta migration'ları uygular, schema_migrations'ta izler
+      migrate_test.go          # testcontainers ile: şema oluşumu + idempotency
     product/
       model.go                 # GORM Product struct (id, name, price)
       repository.go            # GORM ile DB erişimi: List(), GetByID(id)
@@ -166,6 +169,9 @@ vibe-shop/
 ### 7.5 Test Stratejisi (ek)
 - **testcontainers-go**: her test paketi çalışırken geçici bir Postgres container ayağa
   kaldırır, `migrations/0001_create_products.sql` uygulanır, seed veri eklenir.
+- `internal/migrate/migrate_test.go`: init script'siz temiz bir container'da runner'ı
+  çalıştırır; `products` tablosunun oluştuğunu ve runner'ın iki kez çalıştırılınca
+  migration'ı tekrar uygulamadığını (idempotency) kanıtlar.
 - `internal/product/handler_test.go`: gerçek container'a karşı —
   - `GET /api/products` → 200, seed edilen ürünleri döner.
   - `GET /api/products/{var-olan-id}` → 200, doğru ürün.
@@ -197,6 +203,29 @@ vibe-shop/
 - `docker-compose.yml`'i production deploy konfigürasyonu olarak kullanma/genişletme (sadece local dev).
 - Gerçek kimlik bilgilerini/secret'ları `docker-compose.yml` veya repoya commit etme (dev-only
   sabit şifre bu dilimde kabul edilebilir çünkü sadece localhost'ta çalışır).
+
+### 7.7 Migration Mekanizması
+
+Şema, elle `psql` çalıştırmadan yönetilir. `migrations/` altındaki `*.sql` dosyaları binary'e
+gömülüdür (`migrations/embed.go`, `//go:embed`) ve `internal/migrate` sunucu açılışında bunları
+uygular (`cmd/server/main.go` → `migrate.Run(db, migrations.FS)`).
+
+**Nasıl çalışır:**
+- Uygulanan migration'lar `schema_migrations(version TEXT PK, applied_at TIMESTAMPTZ)` tablosunda
+  izlenir; `version`, dosya adının `.sql`'siz hâlidir (örn. `0001_create_products`).
+- Dosyalar **ada göre sıralı** uygulanır → sırayı sayısal önek belirler (`0001_`, `0002_`, …).
+- Her migration kendi transaction'ında uygulanır; `schema_migrations`'a kaydı olan atlanır.
+  Bu yüzden runner her açılışta güvenle çalışır (idempotent) ve uygulanan migration iki kez çalışmaz.
+- Dosya tek bir batch olarak yürütülür; `Exec` bind argümanı almadığından pgx **simple protocol**
+  kullanır, yani bir dosya birden fazla ifade içerebilir.
+
+**Yeni migration eklerken:**
+- `migrations/` altına bir sonraki sıralı öneke sahip yeni bir `NNNN_aciklama.sql` dosyası ekle.
+  Ekstra kayıt/kod gerekmez; açılışta otomatik uygulanır.
+- Uygulanmış bir migration dosyasını **sonradan düzenleme**; yeni bir migration ile ileri al.
+- Şemayı zaten var olan bir DB'ye runner'ı ilk kez bağlarken, mevcut şemaya karşılık gelen
+  version(lar)ı `schema_migrations`'a elle ekleyerek **baseline'la** (yoksa runner var olan
+  nesneleri yeniden oluşturmaya çalışıp hata verir).
 
 ---
 
