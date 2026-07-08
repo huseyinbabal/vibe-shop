@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -228,7 +227,7 @@ func TestCreate_ValidBodyReturns201AndPersists(t *testing.T) {
 	if created.ID == 0 {
 		t.Error("expected non-zero id")
 	}
-	if created.Name != "Lamp" || math.Abs(created.Price-49.90) > 1e-9 {
+	if created.Name != "Lamp" || created.Price.StringFixed(2) != "49.90" {
 		t.Errorf("created = %+v, want name Lamp, price 49.90", created)
 	}
 
@@ -236,7 +235,7 @@ func TestCreate_ValidBodyReturns201AndPersists(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("get after create: status = %d, want %d", status, http.StatusOK)
 	}
-	if got.Name != "Lamp" || math.Abs(got.Price-49.90) > 1e-9 {
+	if got.Name != "Lamp" || got.Price.StringFixed(2) != "49.90" {
 		t.Errorf("persisted = %+v, want name Lamp, price 49.90", got)
 	}
 }
@@ -317,12 +316,12 @@ func TestUpdate_ExistingReturns200AndPersists(t *testing.T) {
 	if err := json.NewDecoder(res.Body).Decode(&p); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if p.ID != created.ID || p.Name != "Comfy Chair" || math.Abs(p.Price-149.99) > 1e-9 {
+	if p.ID != created.ID || p.Name != "Comfy Chair" || p.Price.StringFixed(2) != "149.99" {
 		t.Errorf("updated = %+v, want id %d, Comfy Chair, 149.99", p, created.ID)
 	}
 
 	status, got := getProduct(t, created.ID)
-	if status != http.StatusOK || got.Name != "Comfy Chair" || math.Abs(got.Price-149.99) > 1e-9 {
+	if status != http.StatusOK || got.Name != "Comfy Chair" || got.Price.StringFixed(2) != "149.99" {
 		t.Errorf("persisted = %+v (status %d), want Comfy Chair, 149.99", got, status)
 	}
 }

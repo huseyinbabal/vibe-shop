@@ -3,6 +3,7 @@ module vibe-shop
 go 1.26.3
 
 require (
+	github.com/shopspring/decimal v1.4.0
 	github.com/testcontainers/testcontainers-go v0.43.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.43.0
 	gorm.io/driver/postgres v1.6.0
