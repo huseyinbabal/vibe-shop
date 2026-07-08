@@ -178,7 +178,7 @@ Detaylar: [plan.md](./plan.md#dilim-3--ürün-yazma-apisi--şu-anki-dilim) · Sp
 Detaylar: [plan.md](./plan.md#dilim-4--auth--sepet--sipariş--şu-anki-dilim) · Spec: [../SPEC.md](../SPEC.md) §9
 
 ### Faz 0 — Paylaşılan altyapı
-- [ ] **T24 — internal/httpx: WriteJSON/WriteError**
+- [x] **T24 — internal/httpx: WriteJSON/WriteError**
   - Yapılacak: yeni `internal/httpx/json.go` — `WriteJSON(w, status, body any)` ve
     `WriteError(w, status, message string)` (exported), mevcut ürün yardımcılarıyla **birebir aynı**
     davranış (`Content-Type: application/json`, `{"error":"..."}`). `internal/product/handler.go`
