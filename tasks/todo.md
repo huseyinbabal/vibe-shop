@@ -188,7 +188,7 @@ Detaylar: [plan.md](./plan.md#dilim-4--auth--sepet--sipariş--şu-anki-dilim) ·
   - Dosyalar: `internal/httpx/json.go` (yeni), `internal/product/handler.go`. **Kapsam: S**
 
 ### Faz 1 — Auth dikey dilimi
-- [ ] **T25 — users şeması + auth repository**
+- [x] **T25 — users şeması + auth repository**
   - Yapılacak: `migrations/0002_create_users.sql` — `users(id, email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL, created_at)`. `internal/auth/model.go` — `User` (GORM,
     `TableName()="users"`, `password_hash` alanı `json:"-"`). `internal/auth/repository.go` —
