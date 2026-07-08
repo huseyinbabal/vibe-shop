@@ -115,7 +115,7 @@ Detaylar: [plan.md](./plan.md#dilim-2--ürün-okuma-apisi--şu-anki-dilim) · Sp
   - Doğrulama: `gofmt -l .` boş · `go vet ./...` temiz · `go test ./...` yeşil (Docker açık).
 - [ ] **CHECKPOINT I (final)** — İnsan onayı; dilim tamam.
 
-## Dilim 3 — Ürün Yazma API'si ← *şu anki dilim*
+## Dilim 3 — Ürün Yazma API'si ✅ tamamlandı
 
 Detaylar: [plan.md](./plan.md#dilim-3--ürün-yazma-apisi--şu-anki-dilim) · Spec: [../SPEC.md](../SPEC.md) §8
 
@@ -170,3 +170,112 @@ Detaylar: [plan.md](./plan.md#dilim-3--ürün-yazma-apisi--şu-anki-dilim) · Sp
 - [x] **T23 — Kalite doğrulaması**
   - Doğrulama: `gofmt -l .` boş · `go vet ./...` temiz · `go test ./...` yeşil (Docker açık).
 - [ ] **CHECKPOINT L (final)** — İnsan onayı; dilim tamam.
+
+---
+
+## Dilim 4 — Auth + Sepet + Sipariş ← *şu anki dilim*
+
+Detaylar: [plan.md](./plan.md#dilim-4--auth--sepet--sipariş--şu-anki-dilim) · Spec: [../SPEC.md](../SPEC.md) §9
+
+### Faz 0 — Paylaşılan altyapı
+- [ ] **T24 — internal/httpx: WriteJSON/WriteError**
+  - Yapılacak: yeni `internal/httpx/json.go` — `WriteJSON(w, status, body any)` ve
+    `WriteError(w, status, message string)` (exported), mevcut ürün yardımcılarıyla **birebir aynı**
+    davranış (`Content-Type: application/json`, `{"error":"..."}`). `internal/product/handler.go`
+    bunları çağıracak şekilde güncellenir; yerel `writeJSON`/`writeError` kaldırılır.
+  - Kabul: ürün uçlarının davranışı **değişmez**; yardımcılar diğer paketlerce import edilebilir.
+  - Doğrulama: `go build ./...` · `go test ./internal/product/` yeşil (Docker) · `gofmt`/`vet` temiz.
+  - Dosyalar: `internal/httpx/json.go` (yeni), `internal/product/handler.go`. **Kapsam: S**
+
+### Faz 1 — Auth dikey dilimi
+- [ ] **T25 — users şeması + auth repository**
+  - Yapılacak: `migrations/0002_create_users.sql` — `users(id, email TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL, created_at)`. `internal/auth/model.go` — `User` (GORM,
+    `TableName()="users"`, `password_hash` alanı `json:"-"`). `internal/auth/repository.go` —
+    `Repository{Create(ctx,User)(User,error); GetByEmail(ctx,email)(User,error)}`; GORM impl;
+    unique ihlali → `ErrEmailTaken`, bulunamazsa → `ErrNotFound`.
+  - Kabul: migration uygulanır; create + get-by-email çalışır; duplicate email ayrı hata döner.
+  - Doğrulama: `go build ./internal/auth/` · `internal/auth/repository_test.go` (testcontainers, users migration) yeşil.
+  - Dosyalar: `migrations/0002_create_users.sql`, `internal/auth/model.go`, `repository.go`, `repository_test.go`. **Kapsam: M**
+  - Bağımlılık: T24.
+- [ ] **T26 — JWT + auth middleware**
+  - Yapılacak: `internal/auth/token.go` — golang-jwt/jwt/v5 ile secret+ttl'e bağlı `Issue(userID uint)
+    (string,error)` ve `Parse(tokenStr string)(uint,error)` (HS256, `sub`, `exp`).
+    `internal/auth/middleware.go` — `RequireAuth`: `Authorization: Bearer` oku → `Parse` → başarıda
+    `user_id`'yi context'e koy, aksi halde `httpx.WriteError(401)`. Exported
+    `UserIDFromContext(ctx)(uint,bool)`. `go get` ile jwt bağımlılığı eklenir.
+  - Kabul: token round-trip aynı `userID`; süresi geçmiş/bozuk/yanlış secret → hata; token'sız/bozuk istek → `401`; geçerli istek context'te doğru `user_id`.
+  - Doğrulama: `token_test.go` (container'sız — round-trip, expired, tampered, malformed) + `middleware_test.go` (header yok→401, bozuk→401, geçerli→context+next) yeşil.
+  - Dosyalar: `internal/auth/token.go`, `token_test.go`, `middleware.go`, `middleware_test.go`. **Kapsam: M**
+  - Bağımlılık: T24.
+- [ ] **T27 — register/login handler + kablolama**
+  - Yapılacak: `internal/auth/handler.go` — `registerInput{Email,Password}`, `loginInput{...}`.
+    `Register`: email boş değil/`@` içerir, parola ≥ 8 (aksi `400`); bcrypt hash; `repo.Create`;
+    duplicate → `409 {"error":"email already registered"}`; başarı `201 {"id","email"}`.
+    `Login`: email'e göre getir + bcrypt compare; başarı → JWT `200 {"token"}`; yanlış/eksik →
+    `401 {"error":"invalid credentials"}`. `go get golang.org/x/crypto/bcrypt`. `router.go`'ya
+    public `POST /api/register`, `POST /api/login`; `main.go` `JWT_SECRET` okur (boşsa fatal),
+    token issuer/parser + auth handler kurar, `NewRouter` çağrısını günceller.
+  - Kabul: register `201` (parola dönmez), dup `409`, geçersiz email/kısa parola `400`; login geçerli JWT, yanlış kimlik `401`; boot'ta `JWT_SECRET` zorunlu.
+  - Doğrulama: `internal/auth/handler_test.go` (testcontainers) tüm senaryolar yeşil · `go build ./...`.
+  - Dosyalar: `internal/auth/handler.go`, `handler_test.go`, `internal/http/router.go`, `cmd/server/main.go`. **Kapsam: M**
+  - Bağımlılık: T25, T26.
+- [ ] **CHECKPOINT M** — Uçtan uca: `make start` (veya `docker compose up -d` + migrationlar +
+  `JWT_SECRET=dev-secret ... go run ./cmd/server`); `curl register` → `201`; `curl login` →
+  `{"token":...}`; token'sız `POST /api/cart` (henüz yoksa geçici korumalı bir uçla) → `401`.
+
+### Faz 2 — Sepet dikey dilimi
+- [ ] **T28 — cart şeması + cart repository**
+  - Yapılacak: `migrations/0003_create_cart.sql` — `cart(id, user_id INT NOT NULL REFERENCES
+    users(id), product_id INT NOT NULL REFERENCES products(id), quantity INT NOT NULL CHECK
+    (quantity>0), UNIQUE(user_id, product_id))`. `internal/cart/model.go` — `CartItem` +
+    `GET` için ürün ad/fiyat/satır-toplamı taşıyan görünüm tipi. `internal/cart/repository.go` —
+    `AddOrIncrement(ctx,userID,productID,qty)` upsert (`ON CONFLICT (user_id,product_id) DO UPDATE
+    quantity = cart.quantity + EXCLUDED.quantity`); olmayan ürün → `ErrProductNotFound`;
+    `ListByUser(ctx,userID)` ürünle join; `ClearByUser(ctx,userID)`.
+  - Kabul: ekleme satır oluşturur; tekrar ekleme `quantity` artırır (yeni satır yok); olmayan ürün ayrı hata; list yalnızca o kullanıcının satırları.
+  - Doğrulama: `repository_test.go` (testcontainers: products+users+cart, seed ürün+kullanıcı) — increment, izolasyon, olmayan ürün — yeşil.
+  - Dosyalar: `migrations/0003_create_cart.sql`, `internal/cart/model.go`, `repository.go`, `repository_test.go`. **Kapsam: M**
+  - Bağımlılık: T25 (users), 0001_products.
+- [ ] **T29 — cart handler + rotalar**
+  - Yapılacak: `internal/cart/handler.go` — `cartInput{ProductID uint, Quantity int}`; `Add`:
+    `userID` context'ten, `quantity>0` değilse `400`, olmayan ürün → `404`, başarı `201` + kalem.
+    `Get`: `userID` context'ten, `repo.ListByUser`, `200` + `{items,total}`. `router.go`'ya auth
+    mw arkasında `POST /api/cart`, `GET /api/cart`; `main.go` cart handler'ı kablolar.
+  - Kabul: `POST` `201`; tekrar ekleme artırır; kötü qty `400`; olmayan ürün `404`; token'sız `401`; `GET` doğru toplam; A, B'nin sepetini görmez.
+  - Doğrulama: `handler_test.go` (testcontainers, iki kullanıcı/token dahil izolasyon) yeşil · `go build ./...`.
+  - Dosyalar: `internal/cart/handler.go`, `handler_test.go`, `internal/http/router.go`, `cmd/server/main.go`. **Kapsam: M**
+  - Bağımlılık: T26 (mw), T28.
+- [ ] **CHECKPOINT N** — Uçtan uca: register→login→`POST /api/cart`→`GET /api/cart` doğru toplam;
+  ikinci kullanıcı izolasyonu; token'sız `401`.
+
+### Faz 3 — Sipariş dikey dilimi
+- [ ] **T30 — orders/order_items şeması + order repository (transaction + snapshot)**
+  - Yapılacak: `migrations/0004_create_orders.sql` — `orders(id, user_id REFERENCES users(id),
+    total NUMERIC(10,2), created_at)`. `migrations/0005_create_order_items.sql` —
+    `order_items(id, order_id REFERENCES orders(id), product_id REFERENCES products(id),
+    quantity INT, unit_price NUMERIC(10,2))`. `internal/order/model.go` — `Order`+`OrderItem`.
+    `internal/order/repository.go` — `CreateFromCart(ctx,userID)(Order,error)`: gorm transaction —
+    sepeti o anki ürün fiyatıyla oku; boşsa `ErrCartEmpty`; `orders` ekle; her kalemi
+    `order_items`'a `unit_price` = o anki fiyat snapshot'la; `total` = Σ `qty*unit_price`; sepeti sil.
+  - Kabul: order+items oluşur; `unit_price` = sipariş anındaki fiyat; `total` doğru; sepet boşalır; boş sepet → `ErrCartEmpty`; atomik (hata → rollback, kısmi sipariş yok).
+  - Doğrulama: `repository_test.go` (testcontainers, 5 migration, seed) — snapshot ürün fiyatı sonradan değişse de sabit; sepet boşalır; boş-sepet hatası; izolasyon — yeşil.
+  - Dosyalar: `migrations/0004_create_orders.sql`, `0005_create_order_items.sql`, `internal/order/model.go`, `repository.go`, `repository_test.go`. **Kapsam: M**
+  - Bağımlılık: T28 (cart), T25.
+- [ ] **T31 — order handler + rota**
+  - Yapılacak: `internal/order/handler.go` — `Create`: `userID` context'ten; `repo.CreateFromCart`;
+    `ErrCartEmpty` → `400 {"error":"cart is empty"}`; başarı `201` + sipariş (items+total).
+    `router.go`'ya auth mw arkasında `POST /api/orders`; `main.go` order handler'ı kablolar.
+  - Kabul: `201` + order+items+total; boş sepet `400`; token'sız `401`; fiyat snapshot; sonrasında sepet boş; izolasyon.
+  - Doğrulama: `handler_test.go` (testcontainers) yeşil · `go build ./...`.
+  - Dosyalar: `internal/order/handler.go`, `handler_test.go`, `internal/http/router.go`, `cmd/server/main.go`. **Kapsam: M**
+  - Bağımlılık: T26 (mw), T30.
+- [ ] **CHECKPOINT O** — Uçtan uca: register→login→sepete ekle→`POST /api/orders` `201`→sepet boş
+  (`GET /api/cart` boş); boş sepette `400`; ikinci kullanıcı izolasyonu.
+
+### Faz 4 — Kalite kapısı
+- [ ] **T32 — Kalite doğrulaması**
+  - Yapılacak: `go mod tidy` (yeni bağımlılıklar düzgün kaydolsun); istenirse `api.http`'ye yeni
+    uçların örnekleri eklenir.
+  - Doğrulama: `gofmt -l .` boş · `go vet ./...` temiz · `go test ./...` yeşil (Docker açık).
+- [ ] **CHECKPOINT P (final)** — İnsan onayı; dilim tamam.
