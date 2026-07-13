@@ -6,26 +6,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
-	"vibe-shop/internal/auth"
 	"vibe-shop/internal/auth/authtest"
 	"vibe-shop/internal/cart"
 	"vibe-shop/internal/order"
 	"vibe-shop/internal/product"
 )
-
-// fakeAuthRepository keeps the router test database-free; only routing is under
-// test here, not registration or login behavior.
-type fakeAuthRepository struct{}
-
-func (fakeAuthRepository) Create(ctx context.Context, u auth.User) (auth.User, error) {
-	return u, nil
-}
-
-func (fakeAuthRepository) GetByEmail(ctx context.Context, email string) (auth.User, error) {
-	return auth.User{}, auth.ErrNotFound
-}
 
 // fakeCartRepository keeps the router test database-free.
 type fakeCartRepository struct{}
@@ -50,24 +36,8 @@ func (fakeOrderRepository) CreateFromCart(ctx context.Context, userID string) (o
 	return order.Order{}, order.ErrCartEmpty
 }
 
-// testTokens backs the still-routed register/login handler; protected routes
-// are guarded by the Keycloak middleware wired in newTestRouter.
-var testTokens = auth.NewTokenManager("test-secret", time.Hour)
-
-// newTestRouter wires the router with fake repositories so tests exercise
-// routing without a real database. It returns the router and a mint for
-// tokens accepted by the Keycloak middleware.
-func newTestRouter(t *testing.T) (http.Handler, func(sub string) string) {
-	verifier, mint := authtest.New(t)
-	products := product.NewHandler(fakeProductRepository{})
-	authH := auth.NewHandler(fakeAuthRepository{}, testTokens)
-	cartH := cart.NewHandler(fakeCartRepository{})
-	ordersH := order.NewHandler(fakeOrderRepository{})
-	return NewRouter(products, authH, cartH, ordersH, verifier.RequireAuth), mint
-}
-
 // fakeProductRepository is an in-memory stand-in so the router test doesn't
-// need a real database — only /health's behavior is under test here.
+// need a real database — only routing is under test here.
 type fakeProductRepository struct{}
 
 func (fakeProductRepository) List(ctx context.Context) ([]product.Product, error) {
@@ -90,6 +60,17 @@ func (fakeProductRepository) Delete(ctx context.Context, id uint) error {
 	return product.ErrNotFound
 }
 
+// newTestRouter wires the router with fake repositories so tests exercise
+// routing without a real database. It returns the router and a mint for
+// tokens accepted by the Keycloak middleware.
+func newTestRouter(t *testing.T) (http.Handler, func(sub string) string) {
+	verifier, mint := authtest.New(t)
+	products := product.NewHandler(fakeProductRepository{})
+	cartH := cart.NewHandler(fakeCartRepository{})
+	ordersH := order.NewHandler(fakeOrderRepository{})
+	return NewRouter(products, cartH, ordersH, verifier.RequireAuth), mint
+}
+
 func TestNewRouter_Health(t *testing.T) {
 	router, _ := newTestRouter(t)
 	srv := httptest.NewServer(router)
@@ -109,6 +90,53 @@ func TestNewRouter_Health(t *testing.T) {
 	n, _ := res.Body.Read(buf)
 	if got := strings.TrimSpace(string(buf[:n])); got != `{"status":"ok"}` {
 		t.Errorf("body = %q, want %q", got, `{"status":"ok"}`)
+	}
+}
+
+// TestNewRouter_RegisterLoginRemoved proves slice 5 removed the local auth
+// endpoints: user management now lives in Keycloak.
+func TestNewRouter_RegisterLoginRemoved(t *testing.T) {
+	router, _ := newTestRouter(t)
+	srv := httptest.NewServer(router)
+	defer srv.Close()
+
+	for _, path := range []string{"/api/register", "/api/login"} {
+		res, err := srv.Client().Post(srv.URL+path, "application/json", strings.NewReader(`{}`))
+		if err != nil {
+			t.Fatalf("POST %s: %v", path, err)
+		}
+		res.Body.Close()
+		if res.StatusCode != http.StatusNotFound {
+			t.Errorf("POST %s status = %d, want 404", path, res.StatusCode)
+		}
+	}
+}
+
+// TestNewRouter_ProductReadsArePublic proves the read endpoints stay
+// reachable without any token.
+func TestNewRouter_ProductReadsArePublic(t *testing.T) {
+	router, _ := newTestRouter(t)
+	srv := httptest.NewServer(router)
+	defer srv.Close()
+
+	res, err := http.Get(srv.URL + "/api/products")
+	if err != nil {
+		t.Fatalf("GET /api/products: %v", err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Errorf("GET /api/products status = %d, want 200", res.StatusCode)
+	}
+
+	// The fake repository answers ErrNotFound: a 404 (not 401) proves the
+	// request reached the handler without a token.
+	res, err = http.Get(srv.URL + "/api/products/1")
+	if err != nil {
+		t.Fatalf("GET /api/products/1: %v", err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusNotFound {
+		t.Errorf("GET /api/products/1 status = %d, want 404", res.StatusCode)
 	}
 }
 
@@ -145,11 +173,12 @@ func TestNewRouter_OrderRoute(t *testing.T) {
 	}
 }
 
-// TestNewRouter_ProductWriteRoutes proves the write routes are wired: each
-// request reaches the product handler (status comes from handler logic, not a
-// mux-level 404/405). The fake repository keeps the test database-free.
+// TestNewRouter_ProductWriteRoutes proves the write routes are wired behind
+// the auth middleware: without a token every write gets 401; with a valid
+// token the request reaches the product handler (status comes from handler
+// logic, not a mux-level 404/405 or the middleware's 401).
 func TestNewRouter_ProductWriteRoutes(t *testing.T) {
-	router, _ := newTestRouter(t)
+	router, mint := newTestRouter(t)
 	srv := httptest.NewServer(router)
 	defer srv.Close()
 
@@ -166,11 +195,26 @@ func TestNewRouter_ProductWriteRoutes(t *testing.T) {
 		{http.MethodDelete, "/api/products/1", "", http.StatusNotFound},
 	}
 	for _, c := range cases {
-		t.Run(c.method, func(t *testing.T) {
+		t.Run(c.method+" without token", func(t *testing.T) {
 			req, err := http.NewRequest(c.method, srv.URL+c.path, strings.NewReader(c.body))
 			if err != nil {
 				t.Fatalf("build request: %v", err)
 			}
+			res, err := client.Do(req)
+			if err != nil {
+				t.Fatalf("%s %s: %v", c.method, c.path, err)
+			}
+			res.Body.Close()
+			if res.StatusCode != http.StatusUnauthorized {
+				t.Errorf("status = %d, want 401", res.StatusCode)
+			}
+		})
+		t.Run(c.method+" with token", func(t *testing.T) {
+			req, err := http.NewRequest(c.method, srv.URL+c.path, strings.NewReader(c.body))
+			if err != nil {
+				t.Fatalf("build request: %v", err)
+			}
+			req.Header.Set("Authorization", "Bearer "+mint("router-test-sub"))
 			res, err := client.Do(req)
 			if err != nil {
 				t.Fatalf("%s %s: %v", c.method, c.path, err)

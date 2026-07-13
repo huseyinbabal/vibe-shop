@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -11,6 +12,10 @@ import (
 
 	"vibe-shop/internal/httpx"
 )
+
+// ErrInvalidToken is returned when a token is missing, malformed, expired, or
+// signed with the wrong key.
+var ErrInvalidToken = errors.New("auth: invalid token")
 
 // KeycloakVerifier verifies RS256 JWTs issued by a Keycloak realm using the
 // realm's JWKS endpoint. It is the only trust anchor for protected routes.
