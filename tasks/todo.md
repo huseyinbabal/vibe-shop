@@ -173,7 +173,7 @@ Detaylar: [plan.md](./plan.md#dilim-3--ürün-yazma-apisi--şu-anki-dilim) · Sp
 
 ---
 
-## Dilim 4 — Auth + Sepet + Sipariş ← *şu anki dilim*
+## Dilim 4 — Auth + Sepet + Sipariş ✅ tamamlandı (CHECKPOINT P bekliyor: insan onayı)
 
 Detaylar: [plan.md](./plan.md#dilim-4--auth--sepet--sipariş--şu-anki-dilim) · Spec: [../SPEC.md](../SPEC.md) §9
 
@@ -250,7 +250,7 @@ Detaylar: [plan.md](./plan.md#dilim-4--auth--sepet--sipariş--şu-anki-dilim) ·
   ikinci kullanıcı izolasyonu; token'sız `401`.
 
 ### Faz 3 — Sipariş dikey dilimi
-- [ ] **T30 — orders/order_items şeması + order repository (transaction + snapshot)**
+- [x] **T30 — orders/order_items şeması + order repository (transaction + snapshot)**
   - Yapılacak: `migrations/0004_create_orders.sql` — `orders(id, user_id REFERENCES users(id),
     total NUMERIC(10,2), created_at)`. `migrations/0005_create_order_items.sql` —
     `order_items(id, order_id REFERENCES orders(id), product_id REFERENCES products(id),
@@ -262,7 +262,7 @@ Detaylar: [plan.md](./plan.md#dilim-4--auth--sepet--sipariş--şu-anki-dilim) ·
   - Doğrulama: `repository_test.go` (testcontainers, 5 migration, seed) — snapshot ürün fiyatı sonradan değişse de sabit; sepet boşalır; boş-sepet hatası; izolasyon — yeşil.
   - Dosyalar: `migrations/0004_create_orders.sql`, `0005_create_order_items.sql`, `internal/order/model.go`, `repository.go`, `repository_test.go`. **Kapsam: M**
   - Bağımlılık: T28 (cart), T25.
-- [ ] **T31 — order handler + rota**
+- [x] **T31 — order handler + rota**
   - Yapılacak: `internal/order/handler.go` — `Create`: `userID` context'ten; `repo.CreateFromCart`;
     `ErrCartEmpty` → `400 {"error":"cart is empty"}`; başarı `201` + sipariş (items+total).
     `router.go`'ya auth mw arkasında `POST /api/orders`; `main.go` order handler'ı kablolar.
@@ -270,11 +270,12 @@ Detaylar: [plan.md](./plan.md#dilim-4--auth--sepet--sipariş--şu-anki-dilim) ·
   - Doğrulama: `handler_test.go` (testcontainers) yeşil · `go build ./...`.
   - Dosyalar: `internal/order/handler.go`, `handler_test.go`, `internal/http/router.go`, `cmd/server/main.go`. **Kapsam: M**
   - Bağımlılık: T26 (mw), T30.
-- [ ] **CHECKPOINT O** — Uçtan uca: register→login→sepete ekle→`POST /api/orders` `201`→sepet boş
+- [x] **CHECKPOINT O** — Uçtan uca: register→login→sepete ekle→`POST /api/orders` `201`→sepet boş
   (`GET /api/cart` boş); boş sepette `400`; ikinci kullanıcı izolasyonu.
+  (Canlı curl akışıyla doğrulandı; local 5432 başka projede olduğundan Postgres geçici olarak 5455 portundan çalıştırıldı.)
 
 ### Faz 4 — Kalite kapısı
-- [ ] **T32 — Kalite doğrulaması**
+- [x] **T32 — Kalite doğrulaması**
   - Yapılacak: `go mod tidy` (yeni bağımlılıklar düzgün kaydolsun); istenirse `api.http`'ye yeni
     uçların örnekleri eklenir.
   - Doğrulama: `gofmt -l .` boş · `go vet ./...` temiz · `go test ./...` yeşil (Docker açık).
