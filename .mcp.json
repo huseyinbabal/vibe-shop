@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "postgres": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-postgres-server",
+        "--scope=project"
+      ],
+      "env": {
+        "PG_HOST": "localhost",
+        "PG_PORT": "5432",
+        "PG_USER": "vibeshop",
+        "PG_PASSWORD": "vibeshop",
+        "PG_DATABASE": "vibeshop"
+      }
+    }
+  }
+}

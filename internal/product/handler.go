@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+
+	"vibe-shop/internal/httpx"
 )
 
 // Handler serves the product endpoints over HTTP.
@@ -21,30 +23,30 @@ func NewHandler(repo Repository) *Handler {
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	products, err := h.repo.List(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal error")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	writeJSON(w, http.StatusOK, products)
+	httpx.WriteJSON(w, http.StatusOK, products)
 }
 
 // GetByID handles GET /api/products/{id}.
 func (h *Handler) GetByID(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseUint(r.PathValue("id"), 10, 64)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid product id")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid product id")
 		return
 	}
 
 	p, err := h.repo.GetByID(r.Context(), uint(id))
 	if errors.Is(err, ErrNotFound) {
-		writeError(w, http.StatusNotFound, "product not found")
+		httpx.WriteError(w, http.StatusNotFound, "product not found")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal error")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	writeJSON(w, http.StatusOK, p)
+	httpx.WriteJSON(w, http.StatusOK, p)
 }
 
 // Create handles POST /api/products.
@@ -56,17 +58,17 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 
 	p, err := h.repo.Create(r.Context(), in.product(0))
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal error")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	writeJSON(w, http.StatusCreated, p)
+	httpx.WriteJSON(w, http.StatusCreated, p)
 }
 
 // Update handles PUT /api/products/{id} as a full update.
 func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseUint(r.PathValue("id"), 10, 64)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid product id")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid product id")
 		return
 	}
 
@@ -77,31 +79,31 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 
 	p, err := h.repo.Update(r.Context(), in.product(uint(id)))
 	if errors.Is(err, ErrNotFound) {
-		writeError(w, http.StatusNotFound, "product not found")
+		httpx.WriteError(w, http.StatusNotFound, "product not found")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal error")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	writeJSON(w, http.StatusOK, p)
+	httpx.WriteJSON(w, http.StatusOK, p)
 }
 
 // Delete handles DELETE /api/products/{id}.
 func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseUint(r.PathValue("id"), 10, 64)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid product id")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid product id")
 		return
 	}
 
 	err = h.repo.Delete(r.Context(), uint(id))
 	if errors.Is(err, ErrNotFound) {
-		writeError(w, http.StatusNotFound, "product not found")
+		httpx.WriteError(w, http.StatusNotFound, "product not found")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal error")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -112,22 +114,12 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 func decodeInput(w http.ResponseWriter, r *http.Request) (Input, bool) {
 	var in Input
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid JSON body")
 		return Input{}, false
 	}
 	if err := in.Validate(); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		httpx.WriteError(w, http.StatusBadRequest, err.Error())
 		return Input{}, false
 	}
 	return in, true
-}
-
-func writeJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
-}
-
-func writeError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]string{"error": message})
 }

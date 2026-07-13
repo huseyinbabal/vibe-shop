@@ -16,9 +16,11 @@
 ### Yol haritası
 1. **İskelet + /health** ✅ tamamlandı
 2. **Ürün okuma API'si** (`GET /api/products`, `GET /api/products/:id`) ✅ tamamlandı, bkz. §7
-3. **Ürün yazma API'si** (`POST`, `PUT`, `DELETE /api/products`) ← *şu anki dilim, bkz. §8*
-4. Sepet (`POST /cart`, ...)
-5. Sipariş (`POST /orders`, ...)
+3. **Ürün yazma API'si** (`POST`, `PUT`, `DELETE /api/products`) ✅ tamamlandı, bkz. §8
+4. **Auth + Sepet + Sipariş** (`POST /api/register`, `POST /api/login`, `POST`/`GET /api/cart`,
+   `POST /api/orders`) ✅ tamamlandı, bkz. §9. Not: bu dilim, önceki yol haritasındaki
+   ayrı "Sepet" ve "Sipariş" adımlarını **kimlik doğrulama** ile birlikte tek dilimde birleştirir,
+   çünkü "her kullanıcı yalnızca kendi sepetini/siparişlerini görür" kuralı bir kullanıcı kimliği gerektirir.
 
 ## 2. Komutlar (Commands)
 
@@ -293,3 +295,176 @@ internal/http/
 - Kimlik doğrulama/yetkilendirme ekleme (ileriki dilim; uçlar şimdilik korumasız ve bu bilinçli).
 - Toplu (bulk) ekleme/silme uçları ekleme.
 - Read API'nin mevcut davranışını (`GET` uçları, hata formatı, model alanları) değiştirme.
+
+> **Not:** Dilim 3'teki *"kimlik doğrulama ekleme"* yasağı **o dilime** özgüydü. Dilim 4 (§9) bu
+> kuralı bilinçli olarak kaldırır: JWT tabanlı auth ekler ve sepet/sipariş uçlarını korur.
+> Ürün (`/api/products`) uçları bu dilimde **korumasız kalmaya devam eder** (değiştirilmez).
+
+---
+
+## 9. Dilim 4 — Auth + Sepet + Sipariş (Auth + Cart + Orders)
+
+### 9.1 Amaç
+
+Kullanıcılar kayıt olup giriş yapar, sepete ürün ekler, sepetini görür ve siparişini tamamlar.
+**Her kullanıcı yalnızca kendi sepetini ve siparişlerini görür/değiştirir** — bu izolasyon,
+JWT'den okunan `user_id` ile sağlanır; istemcinin gönderdiği hiçbir `user_id`'ye güvenilmez.
+
+| Metot & Yol | Koruma | Başarı | Gövde (istek → yanıt) |
+|---|---|---|---|
+| `POST /api/register` | public | `201` | `{"email","password"}` → `{"id","email"}` (parola dönmez) |
+| `POST /api/login` | public | `200` | `{"email","password"}` → `{"token"}` (JWT) |
+| `POST /api/cart` | JWT | `201` | `{"product_id","quantity"}` → eklenen/güncellenen sepet kalemi |
+| `GET /api/cart` | JWT | `200` | — → kullanıcının sepet kalemleri + satır/genel toplam |
+| `POST /api/orders` | JWT | `201` | — → sepetten oluşturulan sipariş (kalemler + toplam) |
+
+**Kimlik (Auth):**
+- Login, `HS256` ile imzalanmış bir JWT döner; `sub = user_id`, `exp` sonlu (varsayılan 24 saat).
+  İmza secret'ı `JWT_SECRET` env değişkeninden okunur (hardcode edilmez).
+- Korumalı uçlar `Authorization: Bearer <jwt>` bekler. Token yoksa/geçersizse/süresi geçmişse
+  → `401` + `{"error":"..."}`. Doğrulanan `user_id` request context'ine konur; handler'lar
+  yalnızca oradan okur.
+- Parolalar **bcrypt** ile hash'lenir; düz metin parola asla saklanmaz/loglanmaz.
+
+**Sepet (Cart):**
+- `cart` tablosunun her satırı bir sepet kalemidir: `(user_id, product_id, quantity)`.
+- `POST /api/cart`: `product_id` var olan bir ürün olmalı (yoksa `404`); `quantity` tamsayı ve
+  `> 0` (değilse `400`). Aynı ürün tekrar eklenirse yeni satır açılmaz, mevcut satırın
+  `quantity`'si artırılır (`UNIQUE(user_id, product_id)`).
+- `GET /api/cart`: yalnızca o kullanıcının kalemlerini, ürün adı/fiyatı, satır toplamı ve
+  genel toplamla birlikte döner. Boş sepet → `200` + boş liste (hata değil).
+
+**Sipariş (Order):**
+- `POST /api/orders`: kullanıcının mevcut sepetini siparişe dönüştürür:
+  1. `orders` satırı oluşturulur (`user_id`, `total`).
+  2. Her sepet kalemi bir `order_items` satırına kopyalanır; **o anki ürün fiyatı
+     `unit_price` olarak snapshot'lanır** (ürün fiyatı sonradan değişse bile sipariş sabit kalır).
+  3. `total`, kalemlerin `quantity * unit_price` toplamıdır.
+  4. Kullanıcının sepeti **boşaltılır**.
+  Boş sepette çağrılırsa → `400` + `{"error":"cart is empty"}`.
+  Tüm bu adımlar **tek bir DB transaction**'ı içinde yapılır (kısmi sipariş oluşmaz).
+
+**Başarı ölçütü:** Local Postgres ayaktayken sunucu çalışır; `register` → `login` ile token
+alınır; token ile `POST /api/cart` sepete ürün ekler, `GET /api/cart` doğru toplamı döner,
+`POST /api/orders` siparişi oluşturup sepeti boşaltır; başka bir kullanıcının token'ıyla aynı
+sepet/sipariş **görünmez**; token'sız korumalı istek `401` döner; `go test ./...` (Docker +
+testcontainers ile) yeşil.
+
+### 9.2 Komutlar (ek)
+
+| Komut | Amaç |
+|-------|------|
+| `psql "$DATABASE_URL" -f migrations/0002_create_users.sql` | `users` tablosunu oluşturur |
+| `psql "$DATABASE_URL" -f migrations/0003_create_cart.sql` | `cart` tablosunu oluşturur |
+| `psql "$DATABASE_URL" -f migrations/0004_create_orders.sql` | `orders` tablosunu oluşturur |
+| `psql "$DATABASE_URL" -f migrations/0005_create_order_items.sql` | `order_items` tablosunu oluşturur |
+| `curl -s -X POST localhost:8080/api/register -d '{"email":"a@b.com","password":"parola123"}'` | Kayıt → `201` |
+| `curl -s -X POST localhost:8080/api/login -d '{"email":"a@b.com","password":"parola123"}'` | Giriş → `{"token":"..."}` |
+| `curl -s -X POST localhost:8080/api/cart -H "Authorization: Bearer $TOKEN" -d '{"product_id":5,"quantity":2}'` | Sepete ekle → `201` |
+| `curl -s localhost:8080/api/cart -H "Authorization: Bearer $TOKEN"` | Sepeti gör → `200` |
+| `curl -s -X POST localhost:8080/api/orders -H "Authorization: Bearer $TOKEN"` | Siparişi tamamla → `201` |
+
+> `JWT_SECRET` env değişkeni sunucu başlatılırken verilmelidir (örn.
+> `JWT_SECRET=dev-secret DATABASE_URL=... go run ./cmd/server`).
+
+### 9.3 Proje Yapısı (ek)
+
+```
+vibe-shop/
+  migrations/
+    0002_create_users.sql        # users(id, email UNIQUE, password_hash, created_at)
+    0003_create_cart.sql         # cart(id, user_id, product_id, quantity) + UNIQUE(user_id,product_id)
+    0004_create_orders.sql       # orders(id, user_id, total numeric(10,2), created_at)
+    0005_create_order_items.sql  # order_items(id, order_id, product_id, quantity, unit_price numeric(10,2))
+  internal/
+    auth/
+      model.go         # User struct (GORM) — email, password_hash
+      repository.go    # user erişimi: Create(user), GetByEmail(email)
+      token.go         # golang-jwt ile JWT üret/doğrula (HS256, JWT_SECRET)
+      middleware.go    # Bearer token → user_id'yi context'e koyar; yoksa 401
+      handler.go       # POST /api/register, POST /api/login
+      handler_test.go  # testcontainers tabanlı auth testleri
+    cart/
+      model.go         # CartItem struct (user_id, product_id, quantity)
+      repository.go    # AddOrIncrement(userID,...), ListByUser(userID), ClearByUser(userID)
+      handler.go       # POST /api/cart, GET /api/cart
+      handler_test.go
+    order/
+      model.go         # Order + OrderItem struct'ları
+      repository.go    # CreateFromCart(ctx, userID) — transaction; snapshot fiyat
+      handler.go       # POST /api/orders
+      handler_test.go
+    http/
+      router.go        # public register/login + JWT-korumalı cart/orders rotaları
+```
+
+- `cmd/server/main.go`: `JWT_SECRET` okunur ve auth katmanına verilir (mevcut wiring tarzıyla).
+- Auth middleware, korumalı rota grubunu (cart, orders) sarar; ürün uçları sarılmaz.
+
+### 9.4 Kod Stili (ek/değişiklik)
+
+- **Yeni dış bağımlılıklar (onaylı):** `github.com/golang-jwt/jwt/v5` (yalnızca `internal/auth`)
+  ve `golang.org/x/crypto/bcrypt` (yalnızca `internal/auth`). GORM kullanımı `internal/cart`,
+  `internal/order`, `internal/auth` paketlerine genişler. `internal/health` ve `internal/http`
+  stdlib-only kalır (router yalnızca kablolama yapar).
+- **İzolasyon deseni:** her cart/order repository metodu `userID` parametresi alır ve sorguyu
+  buna göre filtreler. Handler'lar `userID`'yi **yalnızca** `auth.UserIDFromContext(ctx)`'ten
+  okur; istek gövdesinden/query'den asla değil.
+- **JWT:** HS256, secret `JWT_SECRET`'ten. Claim `sub=user_id`, `exp` sonlu. Doğrulama
+  `token.go`'da tek yerde; middleware bunu çağırır.
+- **Parola:** `bcrypt.GenerateFromPassword` (varsayılan cost) ile hash; doğrulamada
+  `bcrypt.CompareHashAndPassword`. Parola hiçbir yanıtta/loglamada görünmez.
+- **Doğrulama:** istek gövdeleri ayrı input tiplerine (`registerInput`, `loginInput`,
+  `cartInput`) decode edilir; doğrulama tek yerde. Mevcut `writeJSON`/`writeError` yardımcıları
+  ve `{"error":"..."}` hata gövdesi kullanılmaya devam eder.
+- **Transaction:** sipariş oluşturma `gorm` transaction (`db.Transaction(func(tx)...)`) içinde;
+  order + order_items + sepet temizliği atomik.
+- Rotalar `http.ServeMux` desenleriyle bağlanır: `"POST /api/register"`, `"POST /api/login"`,
+  `"POST /api/cart"`, `"GET /api/cart"`, `"POST /api/orders"`.
+
+### 9.5 Test Stratejisi (ek)
+
+Mevcut testcontainers düzeni aynen kullanılır; mock repository ile "yeşil" gösterme yok.
+Her test paketi geçici Postgres container'ı ayağa kaldırır, ilgili migration'ları uygular.
+
+- **auth (`internal/auth/handler_test.go`):**
+  - `register` geçerli → `201`; yanıt parola/hash içermez.
+  - `register` var olan email → `409` (veya `400`) + JSON hata.
+  - `register` geçersiz email / kısa parola → `400`.
+  - `login` doğru kimlik → `200` + geçerli JWT; yanlış parola / olmayan email → `401`.
+  - middleware: token'sız / bozuk / süresi geçmiş token → `401`; geçerli token → context'te doğru `user_id`.
+- **cart (`internal/cart/handler_test.go`):**
+  - `POST /api/cart` geçerli → `201`; aynı ürünü tekrar ekleyince `quantity` artar (yeni satır yok).
+  - olmayan `product_id` → `404`; `quantity <= 0` veya tamsayı değil → `400`; token'sız → `401`.
+  - `GET /api/cart` yalnızca o kullanıcının kalemlerini + doğru toplamı döner.
+  - **İzolasyon:** kullanıcı A'nın eklediği ürün, kullanıcı B'nin `GET /api/cart`'ında görünmez.
+- **order (`internal/order/handler_test.go`):**
+  - dolu sepette `POST /api/orders` → `201`; `order_items` fiyatı sipariş anındaki ürün fiyatı;
+    ardından ürün fiyatı değişse bile sipariş `total` değişmez; sepet boşalır.
+  - boş sepette `POST /api/orders` → `400` + `{"error":"cart is empty"}`.
+  - **İzolasyon:** A'nın siparişi B tarafından oluşturulamaz/görülemez; `user_id` daima token'dan.
+- **Geçiş ölçütü:** `go test ./...` (Docker mevcutken) yeşil, `go vet ./...` temiz, `gofmt -l .` boş.
+
+### 9.6 Sınırlar (ek/değişiklik)
+
+**Her zaman yap (ek):**
+- `user_id`'yi **yalnızca** doğrulanmış JWT'den (context) al; istek gövdesi/query'deki `user_id`'ye asla güvenme.
+- Her cart/order DB sorgusunu `user_id`'ye göre filtrele (sahiplik zorunlu).
+- `JWT_SECRET`'i env'den oku; parolaları bcrypt ile hash'le.
+- Sipariş oluşturmayı tek transaction içinde yap; fiyatı `order_items`'a snapshot'la.
+- Doğrulama kurallarını tek ortak yerde uygula; hata gövdesini `{"error":"..."}` formatında dön.
+
+**Önce sor (ek):**
+- Refresh token, rol/yetki (admin vb.), parola sıfırlama, email doğrulama eklemeden önce.
+- Token süresi (`exp`) varsayılanını değiştirmeden önce.
+- Sepetten kalem silme / adet düşürme (`DELETE /api/cart/...`, `PATCH`) uçları eklemeden önce.
+- Stok/envanter kontrolü veya ödeme entegrasyonu eklemeden önce.
+- `migrations/` şemasını (yeni alan/tablo) değiştirmeden önce.
+
+**Asla yapma (ek):**
+- Düz metin parola saklama/dönme/loglama; token'ları loglama.
+- İstemciden gelen `user_id` ile bir kullanıcının verisine erişme.
+- Bir kullanıcının sepet/siparişini başka kullanıcıya döndürme.
+- `JWT_SECRET`'i koda hardcode etme veya repoya commit etme.
+- Ürün (`/api/products`) uçlarının mevcut davranışını değiştirme (bu dilimde korumasız kalırlar).
+- Siparişi transaction dışında, kısmi (order var ama items yok gibi) oluşturma.

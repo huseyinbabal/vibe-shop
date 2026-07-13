@@ -1,5 +1,11 @@
-/server
-/vibe-shop
+# Derleme çıktıları
+/bin/
 *.exe
 *.out
+
+# Ortam değişkenleri
 .env
+
+# Makefile runtime artefaktları
+.server.pid
+*.log

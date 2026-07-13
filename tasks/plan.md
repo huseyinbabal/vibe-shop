@@ -146,7 +146,7 @@ Detaylı görev listesi: [todo.md](./todo.md).
 
 ---
 
-## Dilim 3 — Ürün Yazma API'si ← *şu anki dilim*
+## Dilim 3 — Ürün Yazma API'si ✅ tamamlandı
 
 > Kaynak: [SPEC.md §8](../SPEC.md). Kapsam: **`POST /api/products`, `PUT /api/products/{id}`,
 > `DELETE /api/products/{id}` — doğrulamayla birlikte, read API ile aynı tarzda**.
@@ -246,5 +246,130 @@ kablolu, yalnızca yeni metotlar rotalara bağlanır.
 - `PATCH` / kısmi güncelleme, soft-delete, optimistic locking.
 - Kimlik doğrulama/yetkilendirme, bulk uçlar.
 - Model/migration değişikliği, read API davranış değişikliği.
+
+Detaylı görev listesi: [todo.md](./todo.md).
+
+---
+
+## Dilim 4 — Auth + Sepet + Sipariş ← *şu anki dilim*
+
+> Kaynak: [SPEC.md §9](../SPEC.md). Kapsam: **`POST /api/register`, `POST /api/login` (public) +
+> `POST`/`GET /api/cart`, `POST /api/orders` (JWT korumalı)**. Her kullanıcı yalnızca kendi
+> sepetini/siparişini görür; `user_id` daima JWT'den okunur. Tablolar: `users`, `cart`,
+> `orders`, `order_items`. Refresh token, roller, parola sıfırlama, stok, ödeme bu dilimde YOK.
+
+### Mimari Kararlar
+
+- **Paylaşılan HTTP yardımcıları (önce çıkarılır):** `writeJSON`/`writeError` şu an
+  `internal/product`'a **private**. Auth/cart/order aynı JSON ve `{"error":"..."}` gövdesini
+  kullanacağı için bunlar yeni bir **`internal/httpx`** paketine taşınır (`httpx.WriteJSON`,
+  `httpx.WriteError`); `product` bunları çağıracak şekilde güncellenir. Davranış birebir korunur
+  (mevcut ürün testleri kanıt). Bu, tüm yeni paketlerin ön koşuludur.
+- **Kullanıcı kimliği context'te:** `internal/auth` içinde **private** bir context key; exported
+  `auth.UserIDFromContext(ctx) (uint, bool)` erişimcisi. Middleware `Authorization: Bearer <jwt>`
+  okur, doğrular, `user_id`'yi context'e koyar; yoksa/geçersizse `401`. Handler'lar `user_id`'yi
+  **yalnızca** buradan alır — asla istek gövdesinden/query'den.
+- **JWT (golang-jwt/jwt/v5):** `token.go` içinde secret + ttl'e bağlı `Issue(userID) (string,error)`
+  ve `Parse(tokenStr) (uint,error)`. HS256, claim `sub=user_id`, `exp` sonlu (varsayılan 24s).
+  Secret **`JWT_SECRET`** env'inden `main.go`'da okunur ve enjekte edilir; global/hardcode yok.
+- **Parola (bcrypt):** `bcrypt.GenerateFromPassword` (varsayılan cost) ile hash;
+  `bcrypt.CompareHashAndPassword` ile doğrulama. Parola/hash hiçbir yanıtta/logda görünmez
+  (`json:"-"`).
+- **Sepet modeli:** `cart` her satır bir kalem `(user_id, product_id, quantity)`,
+  `UNIQUE(user_id, product_id)`. `AddOrIncrement` upsert (`ON CONFLICT ... DO UPDATE
+  quantity = quantity + EXCLUDED.quantity`); aynı ürün tekrar eklenince yeni satır açılmaz.
+  `ListByUser` ürünle join'leyip ad/fiyat/satır toplamı döner; `ClearByUser` sepeti boşaltır.
+- **Sipariş (transaction + snapshot):** `CreateFromCart(ctx, userID)` tek bir gorm
+  transaction'ı içinde: sepeti (o anki ürün fiyatıyla) oku → boşsa `ErrCartEmpty` → `orders`
+  ekle → her kalemi `order_items`'a **`unit_price` = o anki fiyat** olarak yaz → `total` = Σ
+  `quantity*unit_price` → sepeti sil. Kısmi sipariş oluşmaz (hata → rollback).
+- **Router imzası büyür:** `NewRouter(products, auth, cart, order, requireAuth)`. Register/login
+  public; cart/orders auth middleware ile sarılır. Ürün uçları **sarılmaz** (korumasız kalır).
+- **Test altyapısı:** Mevcut testcontainers deseni; her yeni test paketi ihtiyacı olan
+  migration'ları **numara sırasıyla** `WithInitScripts(...)` ile uygular (cart → products+users+cart;
+  order → hepsi). Testlerde sabit bir `JWT_SECRET` ile token üretilir; izolasyon testleri iki
+  ayrı kullanıcı/token kullanır.
+- **Yeni bağımlılıklar:** `github.com/golang-jwt/jwt/v5`, `golang.org/x/crypto/bcrypt` — ilk
+  kullanan görevde `go get` + `go mod tidy` ile eklenir (yalnızca `internal/auth` içinde).
+
+### Bağımlılık Grafiği
+
+```
+internal/httpx — WriteJSON/WriteError (T24) ── product bunu kullanır
+        │
+        ▼
+migrations/0002_users → internal/auth: model.go + repository.go (T25)
+        │
+        ▼
+internal/auth: token.go (JWT) + middleware.go (Bearer→context) (T26)  ← httpx
+        │
+        ▼
+internal/auth: handler.go (register+login) + router/main wiring (T27)
+        │                    CHECKPOINT M (auth uçtan uca)
+        ▼
+migrations/0003_cart → internal/cart: model.go + repository.go (T28)  ← users + products
+        │
+        ▼
+internal/cart: handler.go + rotalar (auth mw arkasında) (T29)
+        │                    CHECKPOINT N (sepet uçtan uca + izolasyon)
+        ▼
+migrations/0004_orders + 0005_order_items → internal/order: model + repository CreateFromCart (T30)
+        │
+        ▼
+internal/order: handler.go + rota (auth mw arkasında) (T31)
+        │                    CHECKPOINT O (sipariş uçtan uca + snapshot + izolasyon)
+        ▼
+Kalite kapısı (T32)          CHECKPOINT P (final, insan onayı)
+```
+
+### Dikey Dilimleme Yaklaşımı
+
+Üç kullanıcı yolu ayrı dikey dilimler: **(1) kayıt+giriş**, **(2) sepete ekle+gör**,
+**(3) siparişi tamamla**. Her dilim şema → repository → handler → route → test sırasıyla
+tek seferde tamamlanır ve checkpoint'te uçtan uca çalışır. Ortak altyapı (`httpx`, JWT,
+middleware) en başta, bir kez kurulur. `internal/db` değişmez; `router.go`/`main.go` her
+dilimde artımlı büyür.
+
+### Fazlar ve Checkpoint'ler
+
+#### Faz 0 — Paylaşılan altyapı
+- **T24** `internal/httpx` — `WriteJSON`/`WriteError`; `product` bunları kullanır (davranış korunur).
+
+#### Faz 1 — Auth dikey dilimi
+- **T25** `migrations/0002_create_users.sql` + `internal/auth/model.go` + `repository.go`.
+- **T26** `internal/auth/token.go` (JWT) + `middleware.go` + `UserIDFromContext` (birim testli).
+- **T27** `internal/auth/handler.go` (register/login) + router + `main.go` (`JWT_SECRET`).
+- **CHECKPOINT M:** register→login→token; token'sız korumalı istek `401`.
+
+#### Faz 2 — Sepet dikey dilimi
+- **T28** `migrations/0003_create_cart.sql` + `internal/cart/model.go` + `repository.go`.
+- **T29** `internal/cart/handler.go` (POST/GET) + rotalar (auth mw) + `main.go`.
+- **CHECKPOINT N:** sepete ekle → tekrar ekle artırır → `GET` doğru toplam; A/B izolasyonu; token'sız `401`.
+
+#### Faz 3 — Sipariş dikey dilimi
+- **T30** `migrations/0004_create_orders.sql` + `0005_create_order_items.sql` + `internal/order/model.go` + `repository.go` (transaction + snapshot).
+- **T31** `internal/order/handler.go` (POST) + rota (auth mw) + `main.go`.
+- **CHECKPOINT O:** dolu sepet → sipariş `201` + sepet boşalır; fiyat snapshot; boş sepet `400`; A/B izolasyonu.
+
+#### Faz 4 — Kalite kapısı
+- **T32** `gofmt -l .` boş · `go vet ./...` temiz · `go test ./...` yeşil (Docker) · `go mod tidy`.
+- **CHECKPOINT P (final):** İnsan onayı → dilim tamam.
+
+### Riskler
+
+| Risk | Etki | Önlem |
+|------|------|-------|
+| `writeJSON`/`writeError` çıkarımı ürün yanıtlarını değiştirebilir | Orta | Birebir aynı implementasyon; mevcut ürün testleri kanıt (T24) |
+| Çoklu migration + FK sırası testcontainers'ta yanlış uygulanır | Orta | `WithInitScripts`'e migration yolları **numara sırasıyla** verilir |
+| Testte `JWT_SECRET` yönetimi | Düşük | Token secret+ttl parametresiyle kurulur; testte sabit secret |
+| `float64` fiyat → `numeric(10,2)` snapshot hassasiyeti | Düşük | Ürünle aynı desen; `total` snap'lenmiş `unit_price`'tan hesaplanır |
+| Yeni modüllerin indirilmesi (ağ) gerekir | Düşük | İlk kullanan görevde `go get`/`go mod tidy`; offline ise önden çekilir |
+| bcrypt cost testleri yavaşlatır | Düşük | Kabul edilebilir; gerekirse testte düşük cost, prod'da varsayılan |
+
+### Kapsam Dışı (bilerek, SPEC §9.6 ile uyumlu)
+- Refresh token, rol/yetki, parola sıfırlama, email doğrulama.
+- Sepetten kalem silme/adet düşürme (`DELETE`/`PATCH /api/cart`).
+- Stok/envanter, ödeme entegrasyonu, sipariş listeleme/detay uçları.
+- Ürün (`/api/products`) uçlarına auth ekleme veya davranışını değiştirme.
 
 Detaylı görev listesi: [todo.md](./todo.md).

@@ -65,3 +65,60 @@ DELETE {{baseUrl}}/api/products/3
 
 ### Olmayan ürünü sil → 404 {"error":"product not found"}
 DELETE {{baseUrl}}/api/products/9999
+
+### Kayıt ol → 201 {"id","email","created_at"} (parola dönmez)
+# @name register
+POST {{baseUrl}}/api/register
+Content-Type: application/json
+
+{"email": "ali@example.com", "password": "cok-gizli-parola"}
+
+### Aynı email ile tekrar kayıt → 409 {"error":"email already registered"}
+POST {{baseUrl}}/api/register
+Content-Type: application/json
+
+{"email": "ali@example.com", "password": "cok-gizli-parola"}
+
+### Kısa parola → 400
+POST {{baseUrl}}/api/register
+Content-Type: application/json
+
+{"email": "veli@example.com", "password": "kisa"}
+
+### Giriş yap → 200 {"token":"..."} — token'ı aşağıdaki isteklerde kullan
+# @name login
+POST {{baseUrl}}/api/login
+Content-Type: application/json
+
+{"email": "ali@example.com", "password": "cok-gizli-parola"}
+
+### Yanlış parola → 401 {"error":"invalid credentials"}
+POST {{baseUrl}}/api/login
+Content-Type: application/json
+
+{"email": "ali@example.com", "password": "yanlis-parola"}
+
+### Sepete ekle → 201, kalem (aynı ürünü tekrar eklemek quantity artırır)
+POST {{baseUrl}}/api/cart
+Content-Type: application/json
+Authorization: Bearer {{login.response.body.token}}
+
+{"product_id": 1, "quantity": 2}
+
+### Sepeti görüntüle → 200 {"items":[...],"total":...}
+GET {{baseUrl}}/api/cart
+Authorization: Bearer {{login.response.body.token}}
+
+### Token'sız sepet → 401
+GET {{baseUrl}}/api/cart
+
+### Sipariş ver → 201, sipariş (items + total, fiyatlar o anki değeriyle sabitlenir; sepet boşalır)
+POST {{baseUrl}}/api/orders
+Authorization: Bearer {{login.response.body.token}}
+
+### Boş sepetle sipariş → 400 {"error":"cart is empty"}
+POST {{baseUrl}}/api/orders
+Authorization: Bearer {{login.response.body.token}}
+
+### Token'sız sipariş → 401
+POST {{baseUrl}}/api/orders

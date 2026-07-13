@@ -6,9 +6,62 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"vibe-shop/internal/auth"
+	"vibe-shop/internal/cart"
+	"vibe-shop/internal/order"
 	"vibe-shop/internal/product"
 )
+
+// fakeAuthRepository keeps the router test database-free; only routing is under
+// test here, not registration or login behavior.
+type fakeAuthRepository struct{}
+
+func (fakeAuthRepository) Create(ctx context.Context, u auth.User) (auth.User, error) {
+	return u, nil
+}
+
+func (fakeAuthRepository) GetByEmail(ctx context.Context, email string) (auth.User, error) {
+	return auth.User{}, auth.ErrNotFound
+}
+
+// fakeCartRepository keeps the router test database-free.
+type fakeCartRepository struct{}
+
+func (fakeCartRepository) AddOrIncrement(ctx context.Context, userID, productID uint, quantity int) (cart.Item, error) {
+	return cart.Item{}, nil
+}
+
+func (fakeCartRepository) ListByUser(ctx context.Context, userID uint) ([]cart.LineView, error) {
+	return nil, nil
+}
+
+func (fakeCartRepository) ClearByUser(ctx context.Context, userID uint) error {
+	return nil
+}
+
+// fakeOrderRepository keeps the router test database-free; ErrCartEmpty lets
+// the routing test observe that a request reached the order handler.
+type fakeOrderRepository struct{}
+
+func (fakeOrderRepository) CreateFromCart(ctx context.Context, userID uint) (order.Order, error) {
+	return order.Order{}, order.ErrCartEmpty
+}
+
+// testTokens signs the tokens used by routing tests that must pass the auth
+// middleware; newTestRouter wires the same manager into the router.
+var testTokens = auth.NewTokenManager("test-secret", time.Hour)
+
+// newTestRouter wires the router with fake repositories so tests exercise
+// routing without a real database.
+func newTestRouter() http.Handler {
+	products := product.NewHandler(fakeProductRepository{})
+	authH := auth.NewHandler(fakeAuthRepository{}, testTokens)
+	cartH := cart.NewHandler(fakeCartRepository{})
+	ordersH := order.NewHandler(fakeOrderRepository{})
+	return NewRouter(products, authH, cartH, ordersH, testTokens.RequireAuth)
+}
 
 // fakeProductRepository is an in-memory stand-in so the router test doesn't
 // need a real database — only /health's behavior is under test here.
@@ -35,8 +88,7 @@ func (fakeProductRepository) Delete(ctx context.Context, id uint) error {
 }
 
 func TestNewRouter_Health(t *testing.T) {
-	handler := product.NewHandler(fakeProductRepository{})
-	srv := httptest.NewServer(NewRouter(handler))
+	srv := httptest.NewServer(newTestRouter())
 	defer srv.Close()
 
 	res, err := http.Get(srv.URL + "/health")
@@ -56,12 +108,46 @@ func TestNewRouter_Health(t *testing.T) {
 	}
 }
 
+// TestNewRouter_OrderRoute proves POST /api/orders is wired behind the auth
+// middleware: no token → 401 from the middleware; a valid token reaches the
+// handler, whose fake repository answers ErrCartEmpty → 400.
+func TestNewRouter_OrderRoute(t *testing.T) {
+	srv := httptest.NewServer(newTestRouter())
+	defer srv.Close()
+
+	res, err := srv.Client().Post(srv.URL+"/api/orders", "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST /api/orders without token: %v", err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Errorf("status without token = %d, want 401", res.StatusCode)
+	}
+
+	token, err := testTokens.Issue(1)
+	if err != nil {
+		t.Fatalf("issue token: %v", err)
+	}
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/api/orders", nil)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	res, err = srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/orders with token: %v", err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Errorf("status with token = %d, want 400 (fake repo's empty cart)", res.StatusCode)
+	}
+}
+
 // TestNewRouter_ProductWriteRoutes proves the write routes are wired: each
 // request reaches the product handler (status comes from handler logic, not a
 // mux-level 404/405). The fake repository keeps the test database-free.
 func TestNewRouter_ProductWriteRoutes(t *testing.T) {
-	handler := product.NewHandler(fakeProductRepository{})
-	srv := httptest.NewServer(NewRouter(handler))
+	srv := httptest.NewServer(newTestRouter())
 	defer srv.Close()
 
 	client := srv.Client()
