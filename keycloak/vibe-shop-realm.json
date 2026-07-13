@@ -1,0 +1,43 @@
+{
+  "realm": "vibe-shop",
+  "enabled": true,
+  "sslRequired": "none",
+  "clients": [
+    {
+      "clientId": "vibe-shop-api",
+      "name": "vibe-shop API",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": false,
+      "redirectUris": []
+    }
+  ],
+  "users": [
+    {
+      "username": "testuser",
+      "enabled": true,
+      "email": "testuser@vibe.shop",
+      "emailVerified": true,
+      "firstName": "Test",
+      "lastName": "User",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "test1234", "temporary": false }
+      ]
+    },
+    {
+      "username": "testuser2",
+      "enabled": true,
+      "email": "testuser2@vibe.shop",
+      "emailVerified": true,
+      "firstName": "Test",
+      "lastName": "UserTwo",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "test1234", "temporary": false }
+      ]
+    }
+  ]
+}
