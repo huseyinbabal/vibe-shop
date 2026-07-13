@@ -18,7 +18,7 @@
 2. **Ürün okuma API'si** (`GET /api/products`, `GET /api/products/:id`) ✅ tamamlandı, bkz. §7
 3. **Ürün yazma API'si** (`POST`, `PUT`, `DELETE /api/products`) ✅ tamamlandı, bkz. §8
 4. **Auth + Sepet + Sipariş** (`POST /api/register`, `POST /api/login`, `POST`/`GET /api/cart`,
-   `POST /api/orders`) ← *şu anki dilim, bkz. §9*. Not: bu dilim, önceki yol haritasındaki
+   `POST /api/orders`) ✅ tamamlandı, bkz. §9. Not: bu dilim, önceki yol haritasındaki
    ayrı "Sepet" ve "Sipariş" adımlarını **kimlik doğrulama** ile birlikte tek dilimde birleştirir,
    çünkü "her kullanıcı yalnızca kendi sepetini/siparişlerini görür" kuralı bir kullanıcı kimliği gerektirir.
 
