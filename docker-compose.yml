@@ -26,5 +26,23 @@ services:
     volumes:
       - ./keycloak:/opt/keycloak/data/import:ro
 
+  # Dev-only, tek seferlik: master realm da HTTP'ye izin versin ki admin
+  # konsolu (http://localhost:8081) "HTTPS required" demesin. vibe-shop
+  # realm'i bunu import dosyasındaki sslRequired=none ile zaten yapıyor.
+  keycloak-init:
+    image: quay.io/keycloak/keycloak:26.3
+    restart: "no"
+    depends_on:
+      - keycloak
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        until /opt/keycloak/bin/kcadm.sh config credentials --server http://keycloak:8080 --realm master --user admin --password admin >/dev/null 2>&1; do
+          sleep 2
+        done
+        /opt/keycloak/bin/kcadm.sh update realms/master -s sslRequired=NONE
+        echo "master realm: sslRequired=NONE"
+
 volumes:
   vibeshop-postgres-data:

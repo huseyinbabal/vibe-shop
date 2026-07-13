@@ -525,6 +525,10 @@ uçları herkese açık kalır. API kendi login/register ucunu **açmaz**.
 - Kayıt/parola yönetimi artık API'nin işi değildir: kullanıcılar Keycloak'ta yaratılır
   (dev'de realm import; gerekirse admin konsolu `http://localhost:8081`, `admin`/`admin` —
   yalnızca local dev, §7'deki dev-only credential istisnasıyla aynı).
+- Docker'dan gelen istekler Keycloak'a dış IP gibi göründüğünden `sslRequired` varsayılanı
+  HTTP'yi engeller: `vibe-shop` realm'i bunu import dosyasındaki `"sslRequired": "none"` ile,
+  **master** realm (admin konsolu) ise compose'taki tek seferlik `keycloak-init` servisiyle
+  (`kcadm update realms/master -s sslRequired=NONE`) çözer — ikisi de yalnızca local dev içindir.
 
 **Token doğrulama (API tarafı):**
 - Keycloak **RS256** imzalı JWT verir. API, imzayı Keycloak'ın **JWKS** ucundan
