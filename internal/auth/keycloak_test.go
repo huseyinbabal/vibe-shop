@@ -154,6 +154,83 @@ func TestKeycloakVerifier_RejectsBadTokens(t *testing.T) {
 	}
 }
 
+func TestRequireAuth_Middleware(t *testing.T) {
+	key := newRSAKey(t)
+	issuer := newJWKSServer(t, &key.PublicKey)
+	verifier, err := NewKeycloakVerifier(issuer)
+	if err != nil {
+		t.Fatalf("NewKeycloakVerifier: %v", err)
+	}
+
+	var gotSub string
+	var nextCalled bool
+	handler := verifier.RequireAuth(func(w http.ResponseWriter, r *http.Request) {
+		nextCalled = true
+		gotSub, _ = SubjectFromContext(r.Context())
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	t.Run("valid token reaches next with subject in context", func(t *testing.T) {
+		nextCalled, gotSub = false, ""
+		claims := validClaims(issuer)
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("Authorization", "Bearer "+signRS256(t, key, testKID, claims))
+		rec := httptest.NewRecorder()
+
+		handler(rec, req)
+
+		if !nextCalled {
+			t.Fatal("next was not called for a valid token")
+		}
+		if gotSub != claims.Subject {
+			t.Errorf("SubjectFromContext = %q, want %q", gotSub, claims.Subject)
+		}
+		if rec.Code != http.StatusNoContent {
+			t.Errorf("status = %d, want %d", rec.Code, http.StatusNoContent)
+		}
+	})
+
+	rejected := map[string]func(r *http.Request){
+		"no header":     func(r *http.Request) {},
+		"not bearer":    func(r *http.Request) { r.Header.Set("Authorization", "Basic abc") },
+		"empty bearer":  func(r *http.Request) { r.Header.Set("Authorization", "Bearer ") },
+		"invalid token": func(r *http.Request) { r.Header.Set("Authorization", "Bearer not-a-jwt") },
+		"expired token": func(r *http.Request) {
+			claims := validClaims(issuer)
+			claims.ExpiresAt = jwt.NewNumericDate(time.Now().Add(-time.Hour))
+			r.Header.Set("Authorization", "Bearer "+signRS256(t, key, testKID, claims))
+		},
+	}
+	for name, arrange := range rejected {
+		t.Run(name+" gets 401", func(t *testing.T) {
+			nextCalled = false
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			arrange(req)
+			rec := httptest.NewRecorder()
+
+			handler(rec, req)
+
+			if nextCalled {
+				t.Fatal("next was called, want request rejected")
+			}
+			if rec.Code != http.StatusUnauthorized {
+				t.Errorf("status = %d, want 401", rec.Code)
+			}
+			var body map[string]string
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body["error"] == "" {
+				t.Errorf("body = %q, want JSON {\"error\":...}", rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestSubjectFromContext_Unauthenticated(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	if sub, ok := SubjectFromContext(req.Context()); ok || sub != "" {
+		t.Errorf("SubjectFromContext on bare context = (%q, %v), want (\"\", false)", sub, ok)
+	}
+}
+
 func TestNewKeycloakVerifier_UnreachableJWKS(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "boom", http.StatusInternalServerError)

@@ -3,9 +3,13 @@ package auth
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"strings"
 
 	"github.com/MicahParks/keyfunc/v3"
 	"github.com/golang-jwt/jwt/v5"
+
+	"vibe-shop/internal/httpx"
 )
 
 // KeycloakVerifier verifies RS256 JWTs issued by a Keycloak realm using the
@@ -49,4 +53,39 @@ func (v *KeycloakVerifier) Verify(tokenStr string) (string, error) {
 		return "", ErrInvalidToken
 	}
 	return claims.Subject, nil
+}
+
+// subjectKey is unexported so only this package can set or read the verified
+// Keycloak subject in a request context.
+type subjectKey struct{}
+
+// SubjectFromContext returns the authenticated Keycloak user id (the token's
+// sub claim) placed by RequireAuth, or ok=false when the request was not
+// authenticated.
+func SubjectFromContext(ctx context.Context) (string, bool) {
+	sub, ok := ctx.Value(subjectKey{}).(string)
+	return sub, ok
+}
+
+// RequireAuth wraps next so it runs only for requests carrying a valid
+// "Authorization: Bearer <jwt>" issued by the Keycloak realm. The verified
+// subject is stored in the request context; missing or invalid tokens get a
+// 401.
+func (v *KeycloakVerifier) RequireAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if !ok || token == "" {
+			httpx.WriteError(w, http.StatusUnauthorized, "missing or malformed authorization header")
+			return
+		}
+
+		sub, err := v.Verify(token)
+		if err != nil {
+			httpx.WriteError(w, http.StatusUnauthorized, "invalid or expired token")
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), subjectKey{}, sub)
+		next(w, r.WithContext(ctx))
+	}
 }
