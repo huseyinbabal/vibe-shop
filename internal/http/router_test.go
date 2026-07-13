@@ -10,6 +10,7 @@ import (
 
 	"vibe-shop/internal/auth"
 	"vibe-shop/internal/cart"
+	"vibe-shop/internal/order"
 	"vibe-shop/internal/product"
 )
 
@@ -40,14 +41,26 @@ func (fakeCartRepository) ClearByUser(ctx context.Context, userID uint) error {
 	return nil
 }
 
+// fakeOrderRepository keeps the router test database-free; ErrCartEmpty lets
+// the routing test observe that a request reached the order handler.
+type fakeOrderRepository struct{}
+
+func (fakeOrderRepository) CreateFromCart(ctx context.Context, userID uint) (order.Order, error) {
+	return order.Order{}, order.ErrCartEmpty
+}
+
+// testTokens signs the tokens used by routing tests that must pass the auth
+// middleware; newTestRouter wires the same manager into the router.
+var testTokens = auth.NewTokenManager("test-secret", time.Hour)
+
 // newTestRouter wires the router with fake repositories so tests exercise
 // routing without a real database.
 func newTestRouter() http.Handler {
 	products := product.NewHandler(fakeProductRepository{})
-	tokens := auth.NewTokenManager("test-secret", time.Hour)
-	authH := auth.NewHandler(fakeAuthRepository{}, tokens)
+	authH := auth.NewHandler(fakeAuthRepository{}, testTokens)
 	cartH := cart.NewHandler(fakeCartRepository{})
-	return NewRouter(products, authH, cartH, tokens.RequireAuth)
+	ordersH := order.NewHandler(fakeOrderRepository{})
+	return NewRouter(products, authH, cartH, ordersH, testTokens.RequireAuth)
 }
 
 // fakeProductRepository is an in-memory stand-in so the router test doesn't
@@ -92,6 +105,41 @@ func TestNewRouter_Health(t *testing.T) {
 	n, _ := res.Body.Read(buf)
 	if got := strings.TrimSpace(string(buf[:n])); got != `{"status":"ok"}` {
 		t.Errorf("body = %q, want %q", got, `{"status":"ok"}`)
+	}
+}
+
+// TestNewRouter_OrderRoute proves POST /api/orders is wired behind the auth
+// middleware: no token → 401 from the middleware; a valid token reaches the
+// handler, whose fake repository answers ErrCartEmpty → 400.
+func TestNewRouter_OrderRoute(t *testing.T) {
+	srv := httptest.NewServer(newTestRouter())
+	defer srv.Close()
+
+	res, err := srv.Client().Post(srv.URL+"/api/orders", "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST /api/orders without token: %v", err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Errorf("status without token = %d, want 401", res.StatusCode)
+	}
+
+	token, err := testTokens.Issue(1)
+	if err != nil {
+		t.Fatalf("issue token: %v", err)
+	}
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/api/orders", nil)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	res, err = srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/orders with token: %v", err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Errorf("status with token = %d, want 400 (fake repo's empty cart)", res.StatusCode)
 	}
 }
 

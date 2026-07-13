@@ -11,6 +11,7 @@ import (
 	"vibe-shop/internal/cart"
 	"vibe-shop/internal/db"
 	apphttp "vibe-shop/internal/http"
+	"vibe-shop/internal/order"
 	"vibe-shop/internal/product"
 )
 
@@ -40,9 +41,10 @@ func main() {
 	products := product.NewHandler(product.NewRepository(gormDB))
 	authH := auth.NewHandler(auth.NewRepository(gormDB), tokens)
 	cartH := cart.NewHandler(cart.NewRepository(gormDB))
+	ordersH := order.NewHandler(order.NewRepository(gormDB))
 
 	log.Printf("vibe-shop listening on %s", addr)
-	router := apphttp.NewRouter(products, authH, cartH, tokens.RequireAuth)
+	router := apphttp.NewRouter(products, authH, cartH, ordersH, tokens.RequireAuth)
 	if err := http.ListenAndServe(addr, router); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
