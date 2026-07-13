@@ -288,7 +288,7 @@ Detaylar: [plan.md](./plan.md#dilim-4--auth--sepet--sipariş--şu-anki-dilim) ·
 Detaylar: [plan.md](./plan.md#dilim-5--keycloaka-geçiş-tek-kimlik-sağlayıcı--şu-anki-dilim) · Spec: [../SPEC.md](../SPEC.md) §10
 
 ### Faz 1 — Keycloak local altyapısı
-- [ ] **T33 — docker-compose'a Keycloak + realm import + .env.example**
+- [x] **T33 — docker-compose'a Keycloak + realm import + .env.example**
   - Yapılacak: `docker-compose.yml`'e `keycloak` servisi — `quay.io/keycloak/keycloak:26.3`,
     komut `start-dev --import-realm`, port `8081:8080`, env `KC_BOOTSTRAP_ADMIN_USERNAME=admin`,
     `KC_BOOTSTRAP_ADMIN_PASSWORD=admin`, `./keycloak/` klasörü `/opt/keycloak/data/import/`'a
@@ -301,10 +301,10 @@ Detaylar: [plan.md](./plan.md#dilim-5--keycloaka-geçiş-tek-kimlik-sağlayıcı
     kullanıcıyla token alınabilir; Postgres servisi/portu değişmez.
   - Doğrulama: SPEC §10.2'deki parola-grant curl'ü `access_token` içeren JSON döner.
   - Dosyalar: `docker-compose.yml`, `keycloak/vibe-shop-realm.json` (yeni), `.env.example`. **Kapsam: S**
-- [ ] **CHECKPOINT Q** — Keycloak ayakta, realm import edilmiş, curl ile token alınıyor (manuel).
+- [x] **CHECKPOINT Q** — Keycloak ayakta, realm import edilmiş, curl ile token alınıyor (manuel).
 
 ### Faz 2 — Token doğrulama çekirdeği (test-first, container gerekmez)
-- [ ] **T34 — internal/auth/keycloak.go: KeycloakVerifier**
+- [x] **T34 — internal/auth/keycloak.go: KeycloakVerifier**
   - Yapılacak: `go get github.com/MicahParks/keyfunc/v3`. `NewKeycloakVerifier(issuerURL string)
     (*KeycloakVerifier, error)` — JWKS URL'i `<issuer>/protocol/openid-connect/certs`'ten türetir,
     keyfunc ile çeker (erişilemezse hata döner; `main.go` fatal'ler — T37).
@@ -319,7 +319,7 @@ Detaylar: [plan.md](./plan.md#dilim-5--keycloaka-geçiş-tek-kimlik-sağlayıcı
     (gerçek imza doğrulaması, mock yok); `go test ./internal/auth/` yeşil.
   - Dosyalar: `internal/auth/keycloak.go`, `keycloak_test.go`, `go.mod`/`go.sum`. **Kapsam: M**
   - Bağımlılık: yok (T33'e ihtiyaç duymaz; paralel yürüyebilir).
-- [ ] **T35 — RequireAuth middleware + SubjectFromContext**
+- [x] **T35 — RequireAuth middleware + SubjectFromContext**
   - Yapılacak: `(v *KeycloakVerifier) RequireAuth(next http.HandlerFunc) http.HandlerFunc` —
     `Authorization: Bearer` okuma deseni eski middleware ile birebir; token yok/`Bearer` değil →
     `httpx.WriteError(401, "missing or malformed authorization header")`; `Verify` hatası →
@@ -332,10 +332,10 @@ Detaylar: [plan.md](./plan.md#dilim-5--keycloaka-geçiş-tek-kimlik-sağlayıcı
     `go build ./...` yeşil (eski kodla yan yana derlenir).
   - Dosyalar: `internal/auth/keycloak.go`, `keycloak_test.go`. **Kapsam: S**
   - Bağımlılık: T34.
-- [ ] **CHECKPOINT R** — `go test ./internal/auth/` yeşil (Docker/container gerekmez).
+- [x] **CHECKPOINT R** — `go test ./internal/auth/` yeşil (Docker/container gerekmez).
 
 ### Faz 3 — Kimlik geçişi: cart + order → Keycloak `sub`
-- [ ] **T36 — migration 0006 + cart/order paketlerinin string kimliğe geçişi**
+- [x] **T36 — migration 0006 + cart/order paketlerinin string kimliğe geçişi**
   - Yapılacak: `migrations/0006_switch_to_keycloak_identity.sql` — `cart` ve `orders`
     tablolarındaki `users` FK constraint'leri düşürülür, `user_id` sütunları `TEXT`'e çevrilir,
     `users` tablosu drop edilir (`UNIQUE(user_id, product_id)` korunur). `internal/cart` ve
@@ -353,10 +353,10 @@ Detaylar: [plan.md](./plan.md#dilim-5--keycloaka-geçiş-tek-kimlik-sağlayıcı
     (~5 dosya kuralı bilinçli aşılıyor: cart ve order aynı tabloyu paylaşır — bölmek görevler
     arasında kırmızı test bırakırdı; bkz. plan.md "Mimari Kararlar".)
   - Bağımlılık: T35.
-- [ ] **CHECKPOINT S** — `go test ./internal/cart/ ./internal/order/` yeşil (Docker açık).
+- [x] **CHECKPOINT S** — `go test ./internal/cart/ ./internal/order/` yeşil (Docker açık).
 
 ### Faz 4 — Eski auth'un sökümü + kablolama
-- [ ] **T37 — router + main + eski auth dosyalarının silinmesi**
+- [x] **T37 — router + main + eski auth dosyalarının silinmesi**
   - Yapılacak: `router.go` — `POST /api/register` ve `POST /api/login` rotaları **silinir**;
     imza `NewRouter(products, cartH, ordersH, requireAuth Middleware)` olur (auth handler
     parametresi gider); `POST/PUT/DELETE /api/products` + cart + orders rotalarının tümü
@@ -374,7 +374,7 @@ Detaylar: [plan.md](./plan.md#dilim-5--keycloaka-geçiş-tek-kimlik-sağlayıcı
   - Dosyalar: `internal/http/router.go`, `router_test.go`, `cmd/server/main.go`, 9 silme,
     `go.mod`/`go.sum`. **Kapsam: M** (çoğunluğu silme)
   - Bağımlılık: T36.
-- [ ] **T38 — Makefile + api.http**
+- [x] **T38 — Makefile + api.http**
   - Yapılacak: `Makefile` start zinciri Keycloak hazır olana dek bekler (host'tan
     `curl -sf http://localhost:8081/realms/vibe-shop` döngüsü); sunucuya `KEYCLOAK_ISSUER_URL`'in
     mevcut env sağlama yöntemiyle (DATABASE_URL nasıl veriliyorsa aynı yolla) ulaştığı doğrulanır;
@@ -387,7 +387,7 @@ Detaylar: [plan.md](./plan.md#dilim-5--keycloaka-geçiş-tek-kimlik-sağlayıcı
   - Doğrulama: `make start` sonrası SPEC §10.2 curl akışı elle koşulur.
   - Dosyalar: `Makefile`, `api.http`, (gerekirse) `.env`. **Kapsam: S**
   - Bağımlılık: T33, T37.
-- [ ] **CHECKPOINT T** — Uçtan uca: `docker compose down -v` + `docker compose up -d` (PG + KC) +
+- [x] **CHECKPOINT T** — Uçtan uca: `docker compose down -v` + `docker compose up -d` (PG + KC) +
   migration'lar + sunucu; token'sız `POST /api/products` / `POST /api/cart` / `POST /api/orders` →
   `401`; `kcLogin` token'ıyla `POST /api/products` → `201` (listede görünür), `PUT` → `200`,
   `DELETE` → `204`; aynı token'la sepete ekle → gör → sipariş → sepet boşalır; `kcLogin2`
@@ -395,7 +395,7 @@ Detaylar: [plan.md](./plan.md#dilim-5--keycloaka-geçiş-tek-kimlik-sağlayıcı
   `POST /api/register` ve `POST /api/login` → `404`; `/health` → `{"status":"ok"}`.
 
 ### Faz 5 — Kalite kapısı
-- [ ] **T39 — Kalite doğrulaması**
+- [x] **T39 — Kalite doğrulaması**
   - Yapılacak: `go mod tidy` son kontrol (keyfunc kayıtlı, bcrypt yok).
   - Doğrulama: `gofmt -l .` boş · `go vet ./...` temiz · `go test ./...` yeşil (Docker açık).
 - [ ] **CHECKPOINT U (final)** — İnsan onayı; dilim tamam.
