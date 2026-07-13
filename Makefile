@@ -1,4 +1,4 @@
-.PHONY: start stop restart docker-up db-up db-down server-start server-stop build test vet fmt health logs
+.PHONY: start stop restart docker-up db-up kc-up db-down server-start server-stop build test vet fmt health logs
 
 # --- Yapılandırma ---
 BIN      := bin/server
@@ -8,11 +8,11 @@ PORT     := 8080
 
 # --- Ana hedefler ---
 
-## start: Postgres'i (docker) ve API sunucusunu başlatır
-start: db-up server-start
-	@echo "✅ vibe-shop çalışıyor → http://localhost:$(PORT)"
+## start: Postgres + Keycloak'ı (docker) ve API sunucusunu başlatır
+start: db-up kc-up server-start
+	@echo "✅ vibe-shop çalışıyor → http://localhost:$(PORT) · Keycloak → http://localhost:8081"
 
-## stop: API sunucusunu ve Postgres'i durdurur
+## stop: API sunucusunu, Postgres'i ve Keycloak'ı durdurur
 stop: server-stop db-down
 	@echo "🛑 vibe-shop durduruldu"
 
@@ -36,8 +36,13 @@ db-up: docker-up
 	@docker compose exec -T postgres sh -c 'until pg_isready -U vibeshop -d vibeshop; do sleep 1; done' >/dev/null 2>&1
 	@echo "   Postgres hazır."
 
+kc-up: docker-up
+	@printf "🔑 Keycloak'ın hazır olması bekleniyor"
+	@until curl -sf -o /dev/null http://localhost:8081/realms/vibe-shop; do printf "."; sleep 2; done
+	@echo " hazır."
+
 db-down:
-	@echo "🐘 Postgres durduruluyor..."
+	@echo "🐘 Postgres ve Keycloak durduruluyor..."
 	@docker compose down
 
 # --- Sunucu (arka planda, PID dosyası ile) ---
@@ -47,7 +52,8 @@ server-start: build
 		echo "⚠️  Sunucu zaten çalışıyor (PID $$(cat $(PID_FILE)))"; \
 	else \
 		echo "🚀 Sunucu başlatılıyor..."; \
-		$(BIN) > $(LOG_FILE) 2>&1 & echo $$! > $(PID_FILE); \
+		{ [ -f .env ] && set -a && . ./.env && set +a; \
+		  $(BIN) > $(LOG_FILE) 2>&1 & echo $$! > $(PID_FILE); }; \
 		sleep 1; \
 		echo "   PID $$(cat $(PID_FILE)) · loglar: $(LOG_FILE)"; \
 	fi
