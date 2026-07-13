@@ -38,7 +38,7 @@ Detaylar: [plan.md](./plan.md) · Spec: [../SPEC.md](../SPEC.md)
   - Doğrulama: `gofmt -l .` boş · `go vet ./...` temiz · `go test ./...` yeşil.
 - [x] **CHECKPOINT D (final)** — İnsan onayı; dilim tamam.
 
-## Dilim 2 — Ürün Okuma API'si ✅ tamamlandı (CHECKPOINT I bekliyor: insan onayı)
+## Dilim 2 — Ürün Okuma API'si ✅ tamamlandı
 
 Detaylar: [plan.md](./plan.md#dilim-2--ürün-okuma-apisi--şu-anki-dilim) · Spec: [../SPEC.md](../SPEC.md) §7
 
@@ -113,7 +113,7 @@ Detaylar: [plan.md](./plan.md#dilim-2--ürün-okuma-apisi--şu-anki-dilim) · Sp
 ### Faz 5 — Kalite kapısı
 - [x] **T17 — Kalite doğrulaması**
   - Doğrulama: `gofmt -l .` boş · `go vet ./...` temiz · `go test ./...` yeşil (Docker açık).
-- [ ] **CHECKPOINT I (final)** — İnsan onayı; dilim tamam.
+- [x] **CHECKPOINT I (final)** — İnsan onayı alındı (2026-07-13); dilim tamam.
 
 ## Dilim 3 — Ürün Yazma API'si ✅ tamamlandı
 
@@ -169,11 +169,11 @@ Detaylar: [plan.md](./plan.md#dilim-3--ürün-yazma-apisi--şu-anki-dilim) · Sp
 ### Faz 3 — Kalite kapısı
 - [x] **T23 — Kalite doğrulaması**
   - Doğrulama: `gofmt -l .` boş · `go vet ./...` temiz · `go test ./...` yeşil (Docker açık).
-- [ ] **CHECKPOINT L (final)** — İnsan onayı; dilim tamam.
+- [x] **CHECKPOINT L (final)** — İnsan onayı alındı (2026-07-13); dilim tamam.
 
 ---
 
-## Dilim 4 — Auth + Sepet + Sipariş ✅ tamamlandı (CHECKPOINT P bekliyor: insan onayı)
+## Dilim 4 — Auth + Sepet + Sipariş ✅ tamamlandı
 
 Detaylar: [plan.md](./plan.md#dilim-4--auth--sepet--sipariş--şu-anki-dilim) · Spec: [../SPEC.md](../SPEC.md) §9
 
@@ -279,4 +279,4 @@ Detaylar: [plan.md](./plan.md#dilim-4--auth--sepet--sipariş--şu-anki-dilim) ·
   - Yapılacak: `go mod tidy` (yeni bağımlılıklar düzgün kaydolsun); istenirse `api.http`'ye yeni
     uçların örnekleri eklenir.
   - Doğrulama: `gofmt -l .` boş · `go vet ./...` temiz · `go test ./...` yeşil (Docker açık).
-- [ ] **CHECKPOINT P (final)** — İnsan onayı; dilim tamam.
+- [x] **CHECKPOINT P (final)** — İnsan onayı alındı (2026-07-13); dilim tamam.
