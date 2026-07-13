@@ -5,7 +5,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"time"
 
 	"vibe-shop/internal/auth"
 	"vibe-shop/internal/cart"
@@ -15,10 +14,7 @@ import (
 	"vibe-shop/internal/product"
 )
 
-const (
-	addr     = ":8080"
-	tokenTTL = 24 * time.Hour
-)
+const addr = ":8080"
 
 func main() {
 	dsn := os.Getenv("DATABASE_URL")
@@ -26,9 +22,9 @@ func main() {
 		log.Fatal("DATABASE_URL is not set")
 	}
 
-	jwtSecret := os.Getenv("JWT_SECRET")
-	if jwtSecret == "" {
-		log.Fatal("JWT_SECRET is not set")
+	issuerURL := os.Getenv("KEYCLOAK_ISSUER_URL")
+	if issuerURL == "" {
+		log.Fatal("KEYCLOAK_ISSUER_URL is not set")
 	}
 
 	gormDB, err := db.Connect(dsn)
@@ -36,15 +32,17 @@ func main() {
 		log.Fatalf("connect to database: %v", err)
 	}
 
-	tokens := auth.NewTokenManager(jwtSecret, tokenTTL)
+	verifier, err := auth.NewKeycloakVerifier(issuerURL)
+	if err != nil {
+		log.Fatalf("connect to keycloak (is it running? see docker compose): %v", err)
+	}
 
 	products := product.NewHandler(product.NewRepository(gormDB))
-	authH := auth.NewHandler(auth.NewRepository(gormDB), tokens)
 	cartH := cart.NewHandler(cart.NewRepository(gormDB))
 	ordersH := order.NewHandler(order.NewRepository(gormDB))
 
 	log.Printf("vibe-shop listening on %s", addr)
-	router := apphttp.NewRouter(products, authH, cartH, ordersH, tokens.RequireAuth)
+	router := apphttp.NewRouter(products, cartH, ordersH, verifier.RequireAuth)
 	if err := http.ListenAndServe(addr, router); err != nil {
 		log.Fatalf("server error: %v", err)
 	}

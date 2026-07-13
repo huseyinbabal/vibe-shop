@@ -280,3 +280,122 @@ Detaylar: [plan.md](./plan.md#dilim-4--auth--sepet--sipariş--şu-anki-dilim) ·
     uçların örnekleri eklenir.
   - Doğrulama: `gofmt -l .` boş · `go vet ./...` temiz · `go test ./...` yeşil (Docker açık).
 - [x] **CHECKPOINT P (final)** — İnsan onayı alındı (2026-07-13); dilim tamam.
+
+---
+
+## Dilim 5 — Keycloak'a Geçiş: Tek Kimlik Sağlayıcı ← *şu anki dilim*
+
+Detaylar: [plan.md](./plan.md#dilim-5--keycloaka-geçiş-tek-kimlik-sağlayıcı--şu-anki-dilim) · Spec: [../SPEC.md](../SPEC.md) §10
+
+### Faz 1 — Keycloak local altyapısı
+- [x] **T33 — docker-compose'a Keycloak + realm import + .env.example**
+  - Yapılacak: `docker-compose.yml`'e `keycloak` servisi — `quay.io/keycloak/keycloak:26.3`,
+    komut `start-dev --import-realm`, port `8081:8080`, env `KC_BOOTSTRAP_ADMIN_USERNAME=admin`,
+    `KC_BOOTSTRAP_ADMIN_PASSWORD=admin`, `./keycloak/` klasörü `/opt/keycloak/data/import/`'a
+    mount. Yeni `keycloak/vibe-shop-realm.json` — realm `vibe-shop` (enabled), public client
+    `vibe-shop-api` (`publicClient: true`, `directAccessGrantsEnabled: true`), **iki** kullanıcı:
+    `testuser` ve `testuser2` (enabled, emailVerified, kalıcı parola `test1234`). `.env.example`'a
+    `KEYCLOAK_ISSUER_URL=http://localhost:8081/realms/vibe-shop` eklenir.
+  - Kabul: `docker compose up -d` tek komutla Postgres **ve** Keycloak'ı başlatır; elle admin
+    konsolu adımı gerekmez; `http://localhost:8081/realms/vibe-shop` `200` döner; her iki
+    kullanıcıyla token alınabilir; Postgres servisi/portu değişmez.
+  - Doğrulama: SPEC §10.2'deki parola-grant curl'ü `access_token` içeren JSON döner.
+  - Dosyalar: `docker-compose.yml`, `keycloak/vibe-shop-realm.json` (yeni), `.env.example`. **Kapsam: S**
+- [x] **CHECKPOINT Q** — Keycloak ayakta, realm import edilmiş, curl ile token alınıyor (manuel).
+
+### Faz 2 — Token doğrulama çekirdeği (test-first, container gerekmez)
+- [x] **T34 — internal/auth/keycloak.go: KeycloakVerifier**
+  - Yapılacak: `go get github.com/MicahParks/keyfunc/v3`. `NewKeycloakVerifier(issuerURL string)
+    (*KeycloakVerifier, error)` — JWKS URL'i `<issuer>/protocol/openid-connect/certs`'ten türetir,
+    keyfunc ile çeker (erişilemezse hata döner; `main.go` fatal'ler — T37).
+    `Verify(tokenStr string) (string, error)` — `jwt.Parse` +
+    `jwt.WithValidMethods([]string{"RS256"})` + `iss == issuerURL` + boş olmayan `sub`; `exp`
+    kütüphanece zorlanır; başarıda `sub` döner, her hata `ErrInvalidToken`'a katlanır
+    (eski `TokenManager.Parse` deseni). Eski auth koduna bu görevde **dokunulmaz** (söküm T37).
+  - Kabul: geçerli RS256 token doğru `sub`'ı döner; süresi geçmiş / yanlış `iss` / farklı
+    anahtarla imzalı / HS256 imzalı / `alg=none` / boş `sub` / bilinmeyen `kid` / bozuk string →
+    hepsi `ErrInvalidToken`.
+  - Doğrulama: `keycloak_test.go` — testte üretilen RSA çifti + `httptest` JWKS sunucusu
+    (gerçek imza doğrulaması, mock yok); `go test ./internal/auth/` yeşil.
+  - Dosyalar: `internal/auth/keycloak.go`, `keycloak_test.go`, `go.mod`/`go.sum`. **Kapsam: M**
+  - Bağımlılık: yok (T33'e ihtiyaç duymaz; paralel yürüyebilir).
+- [x] **T35 — RequireAuth middleware + SubjectFromContext**
+  - Yapılacak: `(v *KeycloakVerifier) RequireAuth(next http.HandlerFunc) http.HandlerFunc` —
+    `Authorization: Bearer` okuma deseni eski middleware ile birebir; token yok/`Bearer` değil →
+    `httpx.WriteError(401, "missing or malformed authorization header")`; `Verify` hatası →
+    `httpx.WriteError(401, "invalid or expired token")`; başarıda `sub` context'e konur ve `next`
+    çağrılır. Yeni erişimci `SubjectFromContext(ctx) (string, bool)` — kendi (yeni) context
+    key'iyle; eski `UserIDFromContext` bu görevde yerinde kalır (çakışma yok, söküm T37).
+  - Kabul: header yok / bozuk / geçersiz token → `401` + `{"error":"..."}`; geçerli token →
+    `next` çağrılır ve `SubjectFromContext` doğru `sub`'ı döner.
+  - Doğrulama: `keycloak_test.go`'ya middleware senaryoları; `go test ./internal/auth/` yeşil;
+    `go build ./...` yeşil (eski kodla yan yana derlenir).
+  - Dosyalar: `internal/auth/keycloak.go`, `keycloak_test.go`. **Kapsam: S**
+  - Bağımlılık: T34.
+- [x] **CHECKPOINT R** — `go test ./internal/auth/` yeşil (Docker/container gerekmez).
+
+### Faz 3 — Kimlik geçişi: cart + order → Keycloak `sub`
+- [x] **T36 — migration 0006 + cart/order paketlerinin string kimliğe geçişi**
+  - Yapılacak: `migrations/0006_switch_to_keycloak_identity.sql` — `cart` ve `orders`
+    tablolarındaki `users` FK constraint'leri düşürülür, `user_id` sütunları `TEXT`'e çevrilir,
+    `users` tablosu drop edilir (`UNIQUE(user_id, product_id)` korunur). `internal/cart` ve
+    `internal/order`: modellerde `UserID string`; repository metotları (`AddOrIncrement`,
+    `ListByUser`, `ClearByUser`, `CreateFromCart`) `userID string` alır; handler'lar kimliği
+    `auth.SubjectFromContext`'ten okur. Testler: token üretimi httptest JWKS'li gerçek verifier +
+    test RSA anahtarına geçer; init script listesine `0006` eklenir (0001…0006 numara sırasıyla);
+    izolasyon senaryoları iki farklı `sub` ile korunur. İş mantığı/doğrulama/yanıt gövdeleri
+    **değişmez**.
+  - Kabul: tüm Dilim 4 cart/order senaryoları (increment, toplamlar, snapshot, transaction,
+    boş sepet `400`, izolasyon, token'sız `401`) yeni kimlik tipiyle aynen geçer.
+  - Doğrulama: `go test ./internal/cart/ ./internal/order/` yeşil (Docker açık) · `go build ./...`.
+  - Dosyalar: `migrations/0006_switch_to_keycloak_identity.sql` (yeni), `internal/cart/{model,repository,handler}.go`
+    + testleri, `internal/order/{model,repository,handler}.go` + testleri. **Kapsam: L**
+    (~5 dosya kuralı bilinçli aşılıyor: cart ve order aynı tabloyu paylaşır — bölmek görevler
+    arasında kırmızı test bırakırdı; bkz. plan.md "Mimari Kararlar".)
+  - Bağımlılık: T35.
+- [x] **CHECKPOINT S** — `go test ./internal/cart/ ./internal/order/` yeşil (Docker açık).
+
+### Faz 4 — Eski auth'un sökümü + kablolama
+- [x] **T37 — router + main + eski auth dosyalarının silinmesi**
+  - Yapılacak: `router.go` — `POST /api/register` ve `POST /api/login` rotaları **silinir**;
+    imza `NewRouter(products, cartH, ordersH, requireAuth Middleware)` olur (auth handler
+    parametresi gider); `POST/PUT/DELETE /api/products` + cart + orders rotalarının tümü
+    `requireAuth` ile sarılır; `GET` ürün rotaları ve `/health` sarılmaz. `main.go` —
+    `JWT_SECRET`/`TokenManager`/auth handler kalkar; `KEYCLOAK_ISSUER_URL` okunur (boşsa
+    `log.Fatal`), `NewKeycloakVerifier` kurulur (hata → `log.Fatal`), `verifier.RequireAuth`
+    router'a verilir. **Silinir:** `internal/auth/token.go`, `token_test.go`, `middleware.go`,
+    `middleware_test.go`, `handler.go`, `handler_test.go`, `repository.go`, `repository_test.go`,
+    `model.go`. `go mod tidy` (bcrypt düşer). `router_test.go`: register/login → `404`; token'sız
+    yazma/cart/orders → `401`; geçerli token → handler'a ulaşır; token'sız `GET /api/products` →
+    `200`; `/health` değişmez.
+  - Kabul: `internal/auth`'ta yalnızca `keycloak.go` + testi kalır; `go.mod`'da bcrypt yok;
+    tüm korumalı uçlar tek middleware'den geçer; okuma uçları public.
+  - Doğrulama: `go build ./...` · `go test ./...` yeşil (Docker açık — ilk tam yeşil bu noktada).
+  - Dosyalar: `internal/http/router.go`, `router_test.go`, `cmd/server/main.go`, 9 silme,
+    `go.mod`/`go.sum`. **Kapsam: M** (çoğunluğu silme)
+  - Bağımlılık: T36.
+- [x] **T38 — Makefile + api.http**
+  - Yapılacak: `Makefile` start zinciri Keycloak hazır olana dek bekler (host'tan
+    `curl -sf http://localhost:8081/realms/vibe-shop` döngüsü); sunucuya `KEYCLOAK_ISSUER_URL`'in
+    mevcut env sağlama yöntemiyle (DATABASE_URL nasıl veriliyorsa aynı yolla) ulaştığı doğrulanır;
+    `JWT_SECRET` referansları temizlenir. `api.http`: register/login örnekleri **silinir**;
+    Keycloak token istekleri eklenir (`# @name kcLogin` testuser, `# @name kcLogin2` testuser2);
+    ürün yazma + cart + orders örnekleri Keycloak token'ına geçer; token'sız `401` ve izolasyon
+    (kcLogin2 ile boş sepet) örnekleri eklenir.
+  - Kabul: `make start` tek komutla Postgres + Keycloak + API'yi ayağa kaldırır; `api.http`
+    örnekleri güncel akışla çalışır.
+  - Doğrulama: `make start` sonrası SPEC §10.2 curl akışı elle koşulur.
+  - Dosyalar: `Makefile`, `api.http`, (gerekirse) `.env`. **Kapsam: S**
+  - Bağımlılık: T33, T37.
+- [x] **CHECKPOINT T** — Uçtan uca: `docker compose down -v` + `docker compose up -d` (PG + KC) +
+  migration'lar + sunucu; token'sız `POST /api/products` / `POST /api/cart` / `POST /api/orders` →
+  `401`; `kcLogin` token'ıyla `POST /api/products` → `201` (listede görünür), `PUT` → `200`,
+  `DELETE` → `204`; aynı token'la sepete ekle → gör → sipariş → sepet boşalır; `kcLogin2`
+  token'ı ilk kullanıcının sepetini/siparişini göremez; token'sız `GET /api/products` → `200`;
+  `POST /api/register` ve `POST /api/login` → `404`; `/health` → `{"status":"ok"}`.
+
+### Faz 5 — Kalite kapısı
+- [x] **T39 — Kalite doğrulaması**
+  - Yapılacak: `go mod tidy` son kontrol (keyfunc kayıtlı, bcrypt yok).
+  - Doğrulama: `gofmt -l .` boş · `go vet ./...` temiz · `go test ./...` yeşil (Docker açık).
+- [ ] **CHECKPOINT U (final)** — İnsan onayı; dilim tamam.

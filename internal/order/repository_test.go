@@ -20,12 +20,13 @@ import (
 
 var gormDB *gorm.DB
 
-// Seeded identifiers created in TestMain against a fresh container.
+// Seeded product ids created in TestMain against a fresh container; user ids
+// are Keycloak subjects and need no seeding since slice 5.
 const (
 	productA = 1 // Widget, 9.99
 	productB = 2 // Gadget, 19.99
-	userA    = 1
-	userB    = 2
+	userA    = "22222222-aaaa-4bbb-8ccc-000000000001"
+	userB    = "22222222-aaaa-4bbb-8ccc-000000000002"
 )
 
 const (
@@ -33,8 +34,9 @@ const (
 	priceB = 19.99
 )
 
-// TestMain spins up a real Postgres container with all five migrations, then
-// seeds two products and two users for the package's tests.
+// TestMain spins up a real Postgres container with every migration applied in
+// order (0002 creates users, 0006 drops it again and moves user_id to the
+// Keycloak subject), then seeds two products for the package's tests.
 func TestMain(m *testing.M) {
 	ctx := context.Background()
 
@@ -44,6 +46,7 @@ func TestMain(m *testing.M) {
 		"0003_create_cart.sql",
 		"0004_create_orders.sql",
 		"0005_create_order_items.sql",
+		"0006_switch_to_keycloak_identity.sql",
 	}
 	migrations := make([]string, 0, len(names))
 	for _, name := range names {
@@ -89,12 +92,8 @@ func TestMain(m *testing.M) {
 }
 
 func seed(g *gorm.DB) error {
-	if err := g.Exec(`INSERT INTO products (name, price) VALUES (?, ?), (?, ?)`,
-		"Widget", priceA, "Gadget", priceB).Error; err != nil {
-		return err
-	}
-	return g.Exec(`INSERT INTO users (email, password_hash) VALUES (?, ?), (?, ?)`,
-		"a@example.com", "x", "b@example.com", "y").Error
+	return g.Exec(`INSERT INTO products (name, price) VALUES (?, ?), (?, ?)`,
+		"Widget", priceA, "Gadget", priceB).Error
 }
 
 func approx(a, b float64) bool {
@@ -206,7 +205,7 @@ func TestCreateFromCart_IsolatesUsers(t *testing.T) {
 		t.Fatalf("userA order: %v", err)
 	}
 	if placed.UserID != userA {
-		t.Errorf("order user_id = %d, want %d", placed.UserID, userA)
+		t.Errorf("order user_id = %q, want %q", placed.UserID, userA)
 	}
 	if len(placed.Items) != 1 || placed.Items[0].ProductID != productA {
 		t.Errorf("order items = %+v, want only userA's productA line", placed.Items)

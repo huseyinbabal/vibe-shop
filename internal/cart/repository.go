@@ -12,11 +12,12 @@ import (
 // ErrProductNotFound is returned when adding a product that does not exist.
 var ErrProductNotFound = errors.New("cart: product not found")
 
-// Repository reads and writes cart lines, always scoped to one user.
+// Repository reads and writes cart lines, always scoped to one user. userID
+// is the Keycloak subject taken from the verified token.
 type Repository interface {
-	AddOrIncrement(ctx context.Context, userID, productID uint, quantity int) (Item, error)
-	ListByUser(ctx context.Context, userID uint) ([]LineView, error)
-	ClearByUser(ctx context.Context, userID uint) error
+	AddOrIncrement(ctx context.Context, userID string, productID uint, quantity int) (Item, error)
+	ListByUser(ctx context.Context, userID string) ([]LineView, error)
+	ClearByUser(ctx context.Context, userID string) error
 }
 
 type gormRepository struct {
@@ -31,7 +32,7 @@ func NewRepository(db *gorm.DB) Repository {
 // AddOrIncrement inserts a cart line, or bumps the quantity of the existing
 // line for the same (user, product). It returns the stored line with its total
 // quantity.
-func (r *gormRepository) AddOrIncrement(ctx context.Context, userID, productID uint, quantity int) (Item, error) {
+func (r *gormRepository) AddOrIncrement(ctx context.Context, userID string, productID uint, quantity int) (Item, error) {
 	item := Item{UserID: userID, ProductID: productID, Quantity: quantity}
 	err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "user_id"}, {Name: "product_id"}},
@@ -59,7 +60,7 @@ func (r *gormRepository) AddOrIncrement(ctx context.Context, userID, productID u
 
 // ListByUser returns the user's cart lines joined with product name and price,
 // each carrying its line total.
-func (r *gormRepository) ListByUser(ctx context.Context, userID uint) ([]LineView, error) {
+func (r *gormRepository) ListByUser(ctx context.Context, userID string) ([]LineView, error) {
 	var views []LineView
 	err := r.db.WithContext(ctx).
 		Table("cart").
@@ -75,7 +76,7 @@ func (r *gormRepository) ListByUser(ctx context.Context, userID uint) ([]LineVie
 }
 
 // ClearByUser removes all of the user's cart lines.
-func (r *gormRepository) ClearByUser(ctx context.Context, userID uint) error {
+func (r *gormRepository) ClearByUser(ctx context.Context, userID string) error {
 	if err := r.db.WithContext(ctx).
 		Where("user_id = ?", userID).
 		Delete(&Item{}).Error; err != nil {
