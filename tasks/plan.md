@@ -251,7 +251,7 @@ Detaylı görev listesi: [todo.md](./todo.md).
 
 ---
 
-## Dilim 4 — Auth + Sepet + Sipariş ← *şu anki dilim*
+## Dilim 4 — Auth + Sepet + Sipariş ✅ tamamlandı
 
 > Kaynak: [SPEC.md §9](../SPEC.md). Kapsam: **`POST /api/register`, `POST /api/login` (public) +
 > `POST`/`GET /api/cart`, `POST /api/orders` (JWT korumalı)**. Her kullanıcı yalnızca kendi
@@ -371,5 +371,163 @@ dilimde artımlı büyür.
 - Sepetten kalem silme/adet düşürme (`DELETE`/`PATCH /api/cart`).
 - Stok/envanter, ödeme entegrasyonu, sipariş listeleme/detay uçları.
 - Ürün (`/api/products`) uçlarına auth ekleme veya davranışını değiştirme.
+
+Detaylı görev listesi: [todo.md](./todo.md).
+
+---
+
+## Dilim 5 — Keycloak'a Geçiş: Tek Kimlik Sağlayıcı ← *şu anki dilim*
+
+> Kaynak: [SPEC.md §10](../SPEC.md). Kapsam: **eski auth (`/api/register`, `/api/login`,
+> HS256 JWT, bcrypt, `users` tablosu) kaldırılır; tek kimlik sağlayıcı Keycloak olur (local'de
+> Docker). Tüm korumalı uçlar — cart, orders ve artık ürün yazma uçları — yalnızca geçerli bir
+> Keycloak (RS256) token'ı ile; `GET /api/products*` public kalır.** Rol/yetki (`403`),
+> audience kontrolü, Keycloak production konfigürasyonu bu dilimde YOK.
+
+### Mimari Kararlar
+
+- **Keycloak, sıfır-tıklama kurulumla:** `docker-compose.yml`'e `keycloak` servisi
+  (`quay.io/keycloak/keycloak:26.3`, `start-dev --import-realm`), host portu **8081**
+  (API 8080'i kullanıyor). Realm, repoya eklenen `keycloak/vibe-shop-realm.json`'dan otomatik
+  import edilir: realm `vibe-shop`, **public** client `vibe-shop-api`
+  (`directAccessGrantsEnabled: true` — curl ile `grant_type=password` token alınabilsin),
+  **iki** test kullanıcısı `testuser`/`test1234` ve `testuser2`/`test1234` (izolasyon
+  senaryoları için). Admin konsolunda elle adım yok; kurulum deterministik ve tekrarlanabilir.
+- **Eski auth tamamen sökülür (kullanıcı kararı):** `/api/register` ve `/api/login` rotaları
+  silinir (`404` olur); `internal/auth`'tan `token.go`, `middleware.go`, `handler.go`,
+  `repository.go`, `model.go` ve testleri silinir; bcrypt bağımlılığı `go mod tidy` ile düşer
+  (`golang-jwt/jwt/v5` RS256 parse için kalır). Kullanıcı yönetimi Keycloak'ın işidir.
+  Ölü kod bırakılmaz (SPEC §10.6 "asla yapma").
+- **Kimlik = Keycloak `sub` (string):** `auth.SubjectFromContext(ctx) (string, bool)` eski
+  `UserIDFromContext(uint)`'in yerini alır. cart/order modellerinde `UserID string`; repository
+  metotları `userID string` alır. İzolasyon deseni (her sorgu `user_id` filtreli, kimlik yalnızca
+  context'ten) **aynen korunur** — yalnızca tip ve kaynak değişir.
+- **Şema geçişi (migration 0006):** `cart.user_id` ve `orders.user_id` → `TEXT`; `users`'a giden
+  FK'lar düşürülür; `users` tablosu **drop** edilir. `UNIQUE(user_id, product_id)` korunur.
+  Dev-only veri olduğundan mapping/backfill yapılmaz; temiz geçiş için `docker compose down -v`
+  önerilir. cart ve order **aynı tabloyu paylaştığı için** (order, sepetten okur) domain geçişi
+  tek görevde yapılır — ~5 dosya kuralı bilinçli olarak aşılır; bölmek, görevler arasında
+  kırmızı test / yarı-geçmiş şema bırakırdı.
+- **Doğrulama JWKS ile, tek yerde:** Keycloak RS256 imzalar; API imzayı
+  `<issuer>/protocol/openid-connect/certs` JWKS'inden aldığı public key ile doğrular.
+  Yeni bağımlılık (SPEC §10.4'te onaylı): `github.com/MicahParks/keyfunc/v3` — JWKS
+  indirme/önbellekleme/anahtar rotasyonu; `golang-jwt/jwt/v5` ile entegre, yalnızca
+  `internal/auth` içinde. `Verify(tokenStr) (sub, err)` = `jwt.Parse` +
+  `WithValidMethods(["RS256"])` + `iss` kontrolü + boş olmayan `sub`; tüm hatalar
+  `ErrInvalidToken`'a katlanır (eski `TokenManager.Parse` deseni). `alg=none`/HS256 reddi
+  (alg confusion) açık test senaryosudur.
+- **Fail-fast başlangıç:** `NewKeycloakVerifier(issuerURL)` başlangıçta JWKS'i çeker;
+  erişilemezse `main.go` `log.Fatal` (mevcut `DATABASE_URL` tarzı). Lazy-init alternatifi
+  (ilk istekte çekme) değerlendirildi ve elendi: sunucu "ayakta ama her korumalı istek 401/500"
+  gibi belirsiz bir duruma düşmesin. `make start` sıralamayı üstlenir (Keycloak hazır olana
+  dek bekler). `JWT_SECRET` env'i tamamen kalkar.
+- **Middleware adı `RequireAuth` kalır, router sadeleşir:** `(v *KeycloakVerifier).RequireAuth`
+  mevcut `apphttp.Middleware` tipiyle uyumlu; Bearer okuma deseni eskiyle birebir; doğrulanan
+  `sub` context'e konur. `NewRouter(products, cartH, ordersH, requireAuth)` — auth handler
+  parametresi ve register/login rotaları gider; ürün yazma + cart + orders rotalarının tümü
+  aynı middleware ile sarılır. `internal/http` stdlib-only kalır.
+- **Geçiş sırası build'i yeşil tutar:** yeni verifier/middleware önce **eskiyle yan yana**
+  eklenir (farklı receiver, farklı erişimci adı — çakışma yok); sonra domain `sub`'a geçer;
+  en son eski auth sökülür ve kablolama tamamlanır. Hiçbir görev sonunda derleme kırık kalmaz;
+  `go test ./...`'in tam yeşili söküm görevinin (T37) checkpoint'inde aranır.
+- **Test yaklaşımı — gerçek imza, sahte sunucu:** birim testler kendi RSA çiftini üretip
+  JWKS'i `httptest` ile servis eder; doğrulama kriptografik olarak gerçektir, container
+  gerekmez. cart/order testcontainers testleri aynı senaryoları korur, yalnızca token üretimi
+  test RSA anahtarına geçer ve init script listesine 0006 eklenir. Gerçek Keycloak,
+  CHECKPOINT T'de uçtan uca curl akışıyla kanıtlanır. (testcontainers-go'nun resmi Keycloak
+  modülü yok; community bağımlılık eklemek yerine bu sınırlı istisna seçildi — DB'ye dokunan
+  hiçbir test mock'a dönmüyor.)
+
+### Bağımlılık Grafiği
+
+```
+docker-compose.yml + keycloak/vibe-shop-realm.json + .env.example (T33)
+        │
+        ▼
+              CHECKPOINT Q (Keycloak ayakta, curl ile token alınıyor — manuel)
+
+internal/auth/keycloak.go — KeycloakVerifier: JWKS + RS256 + sub (T34)   ← T33'ten bağımsız yürüyebilir
+        │
+        ▼
+internal/auth/keycloak.go — RequireAuth middleware + SubjectFromContext (T35)  ← eskiyle yan yana
+        │
+        ▼
+              CHECKPOINT R (go test ./internal/auth/ yeşil — container gerekmez)
+
+migrations/0006 + internal/cart + internal/order — kimlik `sub` (string)'e geçer (T36)
+        │
+        ▼
+              CHECKPOINT S (go test ./internal/cart/ ./internal/order/ yeşil — Docker gerekli)
+
+internal/http/router.go + cmd/server/main.go + eski auth dosyalarının silinmesi + go mod tidy (T37)
+        │
+        ▼
+Makefile (Keycloak bekleme) + api.http (Keycloak token'lı örnekler) (T38)   ← T33 + T37
+        │
+        ▼
+              CHECKPOINT T (uçtan uca: compose + gerçek Keycloak token'ı + tüm akışlar)
+
+Kalite kapısı (T39)
+        │
+        ▼
+              CHECKPOINT U (final, insan onayı)
+```
+
+### Dikey Dilimleme Yaklaşımı
+
+Tek kullanıcı yolu vardır: **Keycloak'tan token al → korumalı isteğe ekle → API doğrular →
+`sub` context'ten okunur → mevcut handler çalışır**. Altyapı (T33) ve doğrulama çekirdeği
+(T34-T35) birbirinden bağımsız ilerleyebilir; kimlik geçişi (T36) domain'i yeni kimliğe
+taşır; söküm + kablolama (T37) eski yolu kaldırır; T38 geliştirici deneyimini tamamlar.
+Ürün domain'inin iş mantığı hiç değişmez — yalnızca rotaları korumaya alınır.
+
+### Fazlar ve Checkpoint'ler
+
+#### Faz 1 — Keycloak local altyapısı
+- **T33** `docker-compose.yml`'e keycloak servisi + `keycloak/vibe-shop-realm.json` (2 kullanıcı) + `.env.example`.
+- **CHECKPOINT Q:** `docker compose up -d` sonrası curl ile parola grant'i token döner (manuel).
+
+#### Faz 2 — Token doğrulama çekirdeği (test-first, container'sız)
+- **T34** `internal/auth/keycloak.go` — `KeycloakVerifier` (`go get keyfunc/v3`, JWKS, RS256, iss/exp/sub).
+- **T35** `RequireAuth` middleware + `SubjectFromContext` (eski auth koduyla yan yana; söküm T37'de).
+- **CHECKPOINT R:** `go test ./internal/auth/` yeşil.
+
+#### Faz 3 — Kimlik geçişi (cart + order → Keycloak `sub`)
+- **T36** `migrations/0006` + `internal/cart` + `internal/order` — `UserID string`, handler'lar
+  `SubjectFromContext` okur, testler test-RSA token'larına geçer. (Bilinçli büyük görev; gerekçe
+  yukarıda.)
+- **CHECKPOINT S:** `go test ./internal/cart/ ./internal/order/` yeşil (Docker açık).
+
+#### Faz 4 — Eski auth'un sökümü + kablolama
+- **T37** `router.go` (register/login silinir, tüm korumalı rotalar `requireAuth` ile) +
+  `main.go` (`JWT_SECRET`/`TokenManager` kalkar; `KEYCLOAK_ISSUER_URL` + verifier) + eski auth
+  dosyalarının silinmesi + `go mod tidy` (bcrypt düşer).
+- **T38** `Makefile` (Keycloak hazır-bekleme) + `api.http` (register/login örnekleri silinir;
+  kcLogin/kcLogin2 ile tüm akışlar).
+- **CHECKPOINT T:** Uçtan uca — token'sız yazma/cart/orders `401`; Keycloak token'ıyla ürün
+  yazma `201/200/204` ve cart→order akışı çalışır; `testuser2` izolasyonu; token'sız `GET` `200`;
+  `/api/register`+`/api/login` `404`.
+
+#### Faz 5 — Kalite kapısı
+- **T39** `go mod tidy` doğrulaması · `gofmt -l .` boş · `go vet ./...` temiz · `go test ./...` yeşil (Docker).
+- **CHECKPOINT U (final):** İnsan onayı → dilim tamam.
+
+### Riskler
+
+| Risk | Etki | Önlem |
+|------|------|-------|
+| Alg confusion: HS256/none token'ı RS256 doğrulayıcıyı geçer | Yüksek | `jwt.WithValidMethods(["RS256"])` + HS256/none token'la açık ret testi (T34) |
+| Kimlik tipi geçişi (uint→string) cart/order'da gözden kaçan bir sorguyu kırar | Orta | T36 tek görevde, iki paketin tüm testcontainers testleri aynı senaryoları korur; CHECKPOINT S tam paket yeşili ister |
+| Migration 0006 mevcut dev verisiyle uyumsuz (eski int user_id'ler anlamsızlaşır) | Düşük | Dev-only; `docker compose down -v` ile temiz başlangıç önerilir; backfill bilinçli olarak yok |
+| Keycloak yavaş açılır; sunucu fail-fast olduğu için boot başarısız | Orta | `make start` Keycloak realm URL'i 200 dönene dek bekler (T38); hata mesajı yönlendirici |
+| 8081 portu makinede dolu | Düşük | Compose'ta tek satır değişiklik; port değişikliği "önce sor" (SPEC §10.6) |
+| Realm import formatı Keycloak sürümüyle uyumsuz | Düşük | İmaj `26.3`'e pinli; sürüm değişikliği "önce sor" |
+| Söküm (T37) yanlışlıkla gereken kodu siler | Orta | Silinecek dosya listesi görevde açık; `go build ./...` + `go test ./...` söküm sonrası zorunlu |
+
+### Kapsam Dışı (bilerek, SPEC §10.6 ile uyumlu)
+- Rol/yetki (`403`), audience (`aud`/`azp`) kontrolü.
+- `sub` dışındaki claim'lerin kullanımı/saklanması (email, username vb.).
+- Ürün/sepet/sipariş iş mantığında, doğrulama kurallarında veya yanıt gövdelerinde değişiklik.
+- Keycloak'ın production konfigürasyonu (TLS, gerçek kullanıcılar, `start` modu).
 
 Detaylı görev listesi: [todo.md](./todo.md).
