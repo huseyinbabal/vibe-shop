@@ -2,11 +2,12 @@
 package cart
 
 // Item is a row in the cart table — a single product line in one user's cart.
+// UserID is the Keycloak subject (the verified token's sub claim).
 type Item struct {
-	ID        uint `gorm:"primaryKey" json:"id"`
-	UserID    uint `gorm:"column:user_id" json:"user_id"`
-	ProductID uint `gorm:"column:product_id" json:"product_id"`
-	Quantity  int  `json:"quantity"`
+	ID        uint   `gorm:"primaryKey" json:"id"`
+	UserID    string `gorm:"column:user_id" json:"user_id"`
+	ProductID uint   `gorm:"column:product_id" json:"product_id"`
+	Quantity  int    `json:"quantity"`
 }
 
 // TableName pins the GORM table name to the migration's table name.

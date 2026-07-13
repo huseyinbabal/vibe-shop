@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"vibe-shop/internal/auth"
+	"vibe-shop/internal/auth/authtest"
 	"vibe-shop/internal/cart"
 	"vibe-shop/internal/order"
 	"vibe-shop/internal/product"
@@ -29,15 +30,15 @@ func (fakeAuthRepository) GetByEmail(ctx context.Context, email string) (auth.Us
 // fakeCartRepository keeps the router test database-free.
 type fakeCartRepository struct{}
 
-func (fakeCartRepository) AddOrIncrement(ctx context.Context, userID, productID uint, quantity int) (cart.Item, error) {
+func (fakeCartRepository) AddOrIncrement(ctx context.Context, userID string, productID uint, quantity int) (cart.Item, error) {
 	return cart.Item{}, nil
 }
 
-func (fakeCartRepository) ListByUser(ctx context.Context, userID uint) ([]cart.LineView, error) {
+func (fakeCartRepository) ListByUser(ctx context.Context, userID string) ([]cart.LineView, error) {
 	return nil, nil
 }
 
-func (fakeCartRepository) ClearByUser(ctx context.Context, userID uint) error {
+func (fakeCartRepository) ClearByUser(ctx context.Context, userID string) error {
 	return nil
 }
 
@@ -45,22 +46,24 @@ func (fakeCartRepository) ClearByUser(ctx context.Context, userID uint) error {
 // the routing test observe that a request reached the order handler.
 type fakeOrderRepository struct{}
 
-func (fakeOrderRepository) CreateFromCart(ctx context.Context, userID uint) (order.Order, error) {
+func (fakeOrderRepository) CreateFromCart(ctx context.Context, userID string) (order.Order, error) {
 	return order.Order{}, order.ErrCartEmpty
 }
 
-// testTokens signs the tokens used by routing tests that must pass the auth
-// middleware; newTestRouter wires the same manager into the router.
+// testTokens backs the still-routed register/login handler; protected routes
+// are guarded by the Keycloak middleware wired in newTestRouter.
 var testTokens = auth.NewTokenManager("test-secret", time.Hour)
 
 // newTestRouter wires the router with fake repositories so tests exercise
-// routing without a real database.
-func newTestRouter() http.Handler {
+// routing without a real database. It returns the router and a mint for
+// tokens accepted by the Keycloak middleware.
+func newTestRouter(t *testing.T) (http.Handler, func(sub string) string) {
+	verifier, mint := authtest.New(t)
 	products := product.NewHandler(fakeProductRepository{})
 	authH := auth.NewHandler(fakeAuthRepository{}, testTokens)
 	cartH := cart.NewHandler(fakeCartRepository{})
 	ordersH := order.NewHandler(fakeOrderRepository{})
-	return NewRouter(products, authH, cartH, ordersH, testTokens.RequireAuth)
+	return NewRouter(products, authH, cartH, ordersH, verifier.RequireAuth), mint
 }
 
 // fakeProductRepository is an in-memory stand-in so the router test doesn't
@@ -88,7 +91,8 @@ func (fakeProductRepository) Delete(ctx context.Context, id uint) error {
 }
 
 func TestNewRouter_Health(t *testing.T) {
-	srv := httptest.NewServer(newTestRouter())
+	router, _ := newTestRouter(t)
+	srv := httptest.NewServer(router)
 	defer srv.Close()
 
 	res, err := http.Get(srv.URL + "/health")
@@ -112,7 +116,8 @@ func TestNewRouter_Health(t *testing.T) {
 // middleware: no token → 401 from the middleware; a valid token reaches the
 // handler, whose fake repository answers ErrCartEmpty → 400.
 func TestNewRouter_OrderRoute(t *testing.T) {
-	srv := httptest.NewServer(newTestRouter())
+	router, mint := newTestRouter(t)
+	srv := httptest.NewServer(router)
 	defer srv.Close()
 
 	res, err := srv.Client().Post(srv.URL+"/api/orders", "application/json", nil)
@@ -124,10 +129,7 @@ func TestNewRouter_OrderRoute(t *testing.T) {
 		t.Errorf("status without token = %d, want 401", res.StatusCode)
 	}
 
-	token, err := testTokens.Issue(1)
-	if err != nil {
-		t.Fatalf("issue token: %v", err)
-	}
+	token := mint("router-test-sub")
 	req, err := http.NewRequest(http.MethodPost, srv.URL+"/api/orders", nil)
 	if err != nil {
 		t.Fatalf("build request: %v", err)
@@ -147,7 +149,8 @@ func TestNewRouter_OrderRoute(t *testing.T) {
 // request reaches the product handler (status comes from handler logic, not a
 // mux-level 404/405). The fake repository keeps the test database-free.
 func TestNewRouter_ProductWriteRoutes(t *testing.T) {
-	srv := httptest.NewServer(newTestRouter())
+	router, _ := newTestRouter(t)
+	srv := httptest.NewServer(router)
 	defer srv.Close()
 
 	client := srv.Client()

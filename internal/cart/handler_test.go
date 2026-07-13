@@ -7,40 +7,34 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
-	"vibe-shop/internal/auth"
+	"vibe-shop/internal/auth/authtest"
 	"vibe-shop/internal/cart"
 )
 
-var testTokens = auth.NewTokenManager("test-secret", time.Hour)
-
-// authedRequest issues a token for userID and returns a request carrying it.
-func authedRequest(t *testing.T, userID uint, method, path, body string) *http.Request {
+// authedRequest returns a request carrying a token minted for sub.
+func authedRequest(t *testing.T, mint func(string) string, sub, method, path, body string) *http.Request {
 	t.Helper()
-	token, err := testTokens.Issue(userID)
-	if err != nil {
-		t.Fatalf("issue token: %v", err)
-	}
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Authorization", "Bearer "+mint(sub))
 	return req
 }
 
 func TestAdd_ValidReturns201AndIncrementsOnRepeat(t *testing.T) {
+	verifier, mint := authtest.New(t)
 	repo := cart.NewRepository(gormDB)
 	h := cart.NewHandler(repo)
-	add := testTokens.RequireAuth(h.Add)
+	add := verifier.RequireAuth(h.Add)
 	t.Cleanup(func() { _ = repo.ClearByUser(context.Background(), userA) })
 
 	rec := httptest.NewRecorder()
-	add(rec, authedRequest(t, userA, http.MethodPost, "/api/cart", `{"product_id":1,"quantity":2}`))
+	add(rec, authedRequest(t, mint, userA, http.MethodPost, "/api/cart", `{"product_id":1,"quantity":2}`))
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("first add status = %d, want 201; body=%s", rec.Code, rec.Body.String())
 	}
 
 	rec = httptest.NewRecorder()
-	add(rec, authedRequest(t, userA, http.MethodPost, "/api/cart", `{"product_id":1,"quantity":3}`))
+	add(rec, authedRequest(t, mint, userA, http.MethodPost, "/api/cart", `{"product_id":1,"quantity":3}`))
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("second add status = %d, want 201", rec.Code)
 	}
@@ -54,27 +48,28 @@ func TestAdd_ValidReturns201AndIncrementsOnRepeat(t *testing.T) {
 }
 
 func TestAdd_InvalidInputAndAuth(t *testing.T) {
+	verifier, mint := authtest.New(t)
 	repo := cart.NewRepository(gormDB)
 	h := cart.NewHandler(repo)
-	add := testTokens.RequireAuth(h.Add)
+	add := verifier.RequireAuth(h.Add)
 
 	t.Run("zero quantity", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		add(rec, authedRequest(t, userA, http.MethodPost, "/api/cart", `{"product_id":1,"quantity":0}`))
+		add(rec, authedRequest(t, mint, userA, http.MethodPost, "/api/cart", `{"product_id":1,"quantity":0}`))
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("status = %d, want 400", rec.Code)
 		}
 	})
 	t.Run("nonexistent product", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		add(rec, authedRequest(t, userA, http.MethodPost, "/api/cart", `{"product_id":9999,"quantity":1}`))
+		add(rec, authedRequest(t, mint, userA, http.MethodPost, "/api/cart", `{"product_id":9999,"quantity":1}`))
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("status = %d, want 404", rec.Code)
 		}
 	})
 	t.Run("invalid json", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		add(rec, authedRequest(t, userA, http.MethodPost, "/api/cart", `{"product_id":`))
+		add(rec, authedRequest(t, mint, userA, http.MethodPost, "/api/cart", `{"product_id":`))
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("status = %d, want 400", rec.Code)
 		}
@@ -90,21 +85,22 @@ func TestAdd_InvalidInputAndAuth(t *testing.T) {
 }
 
 func TestGet_ReturnsTotalsAndIsolatesUsers(t *testing.T) {
+	verifier, mint := authtest.New(t)
 	repo := cart.NewRepository(gormDB)
 	h := cart.NewHandler(repo)
-	add := testTokens.RequireAuth(h.Add)
-	get := testTokens.RequireAuth(h.Get)
+	add := verifier.RequireAuth(h.Add)
+	get := verifier.RequireAuth(h.Get)
 	t.Cleanup(func() { _ = repo.ClearByUser(context.Background(), userA) })
 
 	rec := httptest.NewRecorder()
-	add(rec, authedRequest(t, userA, http.MethodPost, "/api/cart", `{"product_id":1,"quantity":3}`))
+	add(rec, authedRequest(t, mint, userA, http.MethodPost, "/api/cart", `{"product_id":1,"quantity":3}`))
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("add status = %d, want 201", rec.Code)
 	}
 
 	// userA sees their line and total.
 	rec = httptest.NewRecorder()
-	get(rec, authedRequest(t, userA, http.MethodGet, "/api/cart", ""))
+	get(rec, authedRequest(t, mint, userA, http.MethodGet, "/api/cart", ""))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("get status = %d, want 200", rec.Code)
 	}
@@ -121,7 +117,7 @@ func TestGet_ReturnsTotalsAndIsolatesUsers(t *testing.T) {
 
 	// userB has an empty cart — isolation.
 	rec = httptest.NewRecorder()
-	get(rec, authedRequest(t, userB, http.MethodGet, "/api/cart", ""))
+	get(rec, authedRequest(t, mint, userB, http.MethodGet, "/api/cart", ""))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("userB get status = %d, want 200", rec.Code)
 	}

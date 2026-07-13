@@ -18,24 +18,29 @@ import (
 
 var gormDB *gorm.DB
 
-// Seeded identifiers created in TestMain against a fresh container.
+// Seeded product ids created in TestMain against a fresh container; user ids
+// are Keycloak subjects and need no seeding since slice 5.
 const (
 	productA = 1
 	productB = 2
-	userA    = 1
-	userB    = 2
+	userA    = "11111111-aaaa-4bbb-8ccc-000000000001"
+	userB    = "11111111-aaaa-4bbb-8ccc-000000000002"
 )
 
-// TestMain spins up a real Postgres container with the products, users, and
-// cart tables, then seeds two products and two users for the package's tests.
+// TestMain spins up a real Postgres container with every migration applied in
+// order (0002 creates users, 0006 drops it again and moves user_id to the
+// Keycloak subject), then seeds two products for the package's tests.
 func TestMain(m *testing.M) {
 	ctx := context.Background()
 
-	migrations := make([]string, 0, 3)
+	migrations := make([]string, 0, 6)
 	for _, name := range []string{
 		"0001_create_products.sql",
 		"0002_create_users.sql",
 		"0003_create_cart.sql",
+		"0004_create_orders.sql",
+		"0005_create_order_items.sql",
+		"0006_switch_to_keycloak_identity.sql",
 	} {
 		p, err := filepath.Abs(filepath.Join("..", "..", "migrations", name))
 		if err != nil {
@@ -79,12 +84,8 @@ func TestMain(m *testing.M) {
 }
 
 func seed(g *gorm.DB) error {
-	if err := g.Exec(`INSERT INTO products (name, price) VALUES (?, ?), (?, ?)`,
-		"Widget", 9.99, "Gadget", 19.99).Error; err != nil {
-		return err
-	}
-	return g.Exec(`INSERT INTO users (email, password_hash) VALUES (?, ?), (?, ?)`,
-		"a@example.com", "x", "b@example.com", "y").Error
+	return g.Exec(`INSERT INTO products (name, price) VALUES (?, ?), (?, ?)`,
+		"Widget", 9.99, "Gadget", 19.99).Error
 }
 
 func TestAddOrIncrement_CreatesLine(t *testing.T) {

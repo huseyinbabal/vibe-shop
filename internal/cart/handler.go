@@ -10,7 +10,7 @@ import (
 )
 
 // Handler serves the cart endpoints. It relies on auth middleware having placed
-// the authenticated user id in the request context.
+// the authenticated Keycloak subject in the request context.
 type Handler struct {
 	repo Repository
 }
@@ -32,7 +32,7 @@ type cartResponse struct {
 
 // Add handles POST /api/cart.
 func (h *Handler) Add(w http.ResponseWriter, r *http.Request) {
-	userID, ok := auth.UserIDFromContext(r.Context())
+	userID, ok := auth.SubjectFromContext(r.Context())
 	if !ok {
 		httpx.WriteError(w, http.StatusUnauthorized, "unauthenticated")
 		return
@@ -66,7 +66,7 @@ func (h *Handler) Add(w http.ResponseWriter, r *http.Request) {
 
 // Get handles GET /api/cart.
 func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
-	userID, ok := auth.UserIDFromContext(r.Context())
+	userID, ok := auth.SubjectFromContext(r.Context())
 	if !ok {
 		httpx.WriteError(w, http.StatusUnauthorized, "unauthenticated")
 		return

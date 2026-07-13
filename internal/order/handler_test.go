@@ -7,30 +7,24 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
-	"vibe-shop/internal/auth"
+	"vibe-shop/internal/auth/authtest"
 	"vibe-shop/internal/cart"
 	"vibe-shop/internal/order"
 )
 
-var testTokens = auth.NewTokenManager("test-secret", time.Hour)
-
-// authedRequest issues a token for userID and returns a request carrying it.
-func authedRequest(t *testing.T, userID uint, method, path string) *http.Request {
+// authedRequest returns a request carrying a token minted for sub.
+func authedRequest(t *testing.T, mint func(string) string, sub, method, path string) *http.Request {
 	t.Helper()
-	token, err := testTokens.Issue(userID)
-	if err != nil {
-		t.Fatalf("issue token: %v", err)
-	}
 	req := httptest.NewRequest(method, path, strings.NewReader(""))
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Authorization", "Bearer "+mint(sub))
 	return req
 }
 
 func TestCreate_PlacesOrderAndEmptiesCart(t *testing.T) {
+	verifier, mint := authtest.New(t)
 	carts := cart.NewRepository(gormDB)
-	create := testTokens.RequireAuth(order.NewHandler(order.NewRepository(gormDB)).Create)
+	create := verifier.RequireAuth(order.NewHandler(order.NewRepository(gormDB)).Create)
 	t.Cleanup(func() { _ = carts.ClearByUser(context.Background(), userA) })
 
 	if _, err := carts.AddOrIncrement(context.Background(), userA, productA, 3); err != nil {
@@ -38,7 +32,7 @@ func TestCreate_PlacesOrderAndEmptiesCart(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	create(rec, authedRequest(t, userA, http.MethodPost, "/api/orders"))
+	create(rec, authedRequest(t, mint, userA, http.MethodPost, "/api/orders"))
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201; body=%s", rec.Code, rec.Body.String())
 	}
@@ -48,7 +42,7 @@ func TestCreate_PlacesOrderAndEmptiesCart(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 	if placed.UserID != userA {
-		t.Errorf("user_id = %d, want %d", placed.UserID, userA)
+		t.Errorf("user_id = %q, want %q", placed.UserID, userA)
 	}
 	if len(placed.Items) != 1 || placed.Items[0].Quantity != 3 {
 		t.Errorf("items = %+v, want one line with quantity 3", placed.Items)
@@ -67,10 +61,11 @@ func TestCreate_PlacesOrderAndEmptiesCart(t *testing.T) {
 }
 
 func TestCreate_EmptyCartReturns400(t *testing.T) {
-	create := testTokens.RequireAuth(order.NewHandler(order.NewRepository(gormDB)).Create)
+	verifier, mint := authtest.New(t)
+	create := verifier.RequireAuth(order.NewHandler(order.NewRepository(gormDB)).Create)
 
 	rec := httptest.NewRecorder()
-	create(rec, authedRequest(t, userB, http.MethodPost, "/api/orders"))
+	create(rec, authedRequest(t, mint, userB, http.MethodPost, "/api/orders"))
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400; body=%s", rec.Code, rec.Body.String())
 	}
@@ -80,7 +75,8 @@ func TestCreate_EmptyCartReturns400(t *testing.T) {
 }
 
 func TestCreate_NoTokenReturns401(t *testing.T) {
-	create := testTokens.RequireAuth(order.NewHandler(order.NewRepository(gormDB)).Create)
+	verifier, _ := authtest.New(t)
+	create := verifier.RequireAuth(order.NewHandler(order.NewRepository(gormDB)).Create)
 
 	rec := httptest.NewRecorder()
 	create(rec, httptest.NewRequest(http.MethodPost, "/api/orders", strings.NewReader("")))

@@ -9,7 +9,7 @@ import (
 )
 
 // Handler serves the order endpoint. It relies on auth middleware having placed
-// the authenticated user id in the request context.
+// the authenticated Keycloak subject in the request context.
 type Handler struct {
 	repo Repository
 }
@@ -22,7 +22,7 @@ func NewHandler(repo Repository) *Handler {
 // Create handles POST /api/orders: it turns the user's cart into an order and
 // returns the placed order with its items and total.
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
-	userID, ok := auth.UserIDFromContext(r.Context())
+	userID, ok := auth.SubjectFromContext(r.Context())
 	if !ok {
 		httpx.WriteError(w, http.StatusUnauthorized, "unauthenticated")
 		return

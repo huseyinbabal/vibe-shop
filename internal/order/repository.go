@@ -11,9 +11,10 @@ import (
 // ErrCartEmpty is returned when placing an order for a user whose cart is empty.
 var ErrCartEmpty = errors.New("order: cart is empty")
 
-// Repository creates orders from a user's cart.
+// Repository creates orders from a user's cart. userID is the Keycloak
+// subject taken from the verified token.
 type Repository interface {
-	CreateFromCart(ctx context.Context, userID uint) (Order, error)
+	CreateFromCart(ctx context.Context, userID string) (Order, error)
 }
 
 type gormRepository struct {
@@ -36,7 +37,7 @@ type cartLine struct {
 // transaction: it snapshots each product's current price into order_items,
 // records the total, and empties the cart. An empty cart yields ErrCartEmpty
 // and no order is created.
-func (r *gormRepository) CreateFromCart(ctx context.Context, userID uint) (Order, error) {
+func (r *gormRepository) CreateFromCart(ctx context.Context, userID string) (Order, error) {
 	var placed Order
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var lines []cartLine

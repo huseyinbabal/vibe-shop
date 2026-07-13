@@ -5,9 +5,10 @@ package order
 import "time"
 
 // Order is a row in the orders table together with its line items.
+// UserID is the Keycloak subject (the verified token's sub claim).
 type Order struct {
 	ID        uint        `gorm:"primaryKey" json:"id"`
-	UserID    uint        `gorm:"column:user_id" json:"user_id"`
+	UserID    string      `gorm:"column:user_id" json:"user_id"`
 	Total     float64     `gorm:"type:numeric(10,2)" json:"total"`
 	CreatedAt time.Time   `json:"created_at"`
 	Items     []OrderItem `gorm:"foreignKey:OrderID" json:"items"`
