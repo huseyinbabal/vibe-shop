@@ -11,7 +11,8 @@
       "publicClient": true,
       "directAccessGrantsEnabled": true,
       "standardFlowEnabled": false,
-      "redirectUris": []
+      "redirectUris": [],
+      "webOrigins": ["http://localhost:5173"]
     }
   ],
   "users": [
