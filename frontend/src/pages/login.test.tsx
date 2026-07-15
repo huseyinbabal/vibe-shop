@@ -60,8 +60,8 @@ describe("login page", () => {
     await user.type(screen.getByLabelText("Parola"), "test1234")
     await user.click(screen.getByRole("button", { name: "Giriş Yap" }))
 
-    // Returned to the route the user originally asked for.
-    expect(await screen.findByText("cart")).toBeInTheDocument()
+    // Returned to the route the user originally asked for (/cart).
+    expect(await screen.findByText("Sepetin boş.")).toBeInTheDocument()
     expect(getTokens()?.accessToken).toBe("at-login")
   })
 
