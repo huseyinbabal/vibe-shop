@@ -12,7 +12,7 @@
       "directAccessGrantsEnabled": true,
       "standardFlowEnabled": false,
       "redirectUris": [],
-      "webOrigins": ["http://localhost:5173"]
+      "webOrigins": ["http://localhost:5173", "http://127.0.0.1:5173"]
     }
   ],
   "users": [
