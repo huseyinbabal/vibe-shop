@@ -1,10 +1,18 @@
 .PHONY: start stop restart docker-up db-up kc-up db-down server-start server-stop build test vet fmt health logs
 
 # --- Yapılandırma ---
+# .env varsa oradaki değerler (ADDR, DATABASE_URL, KEYCLOAK_ISSUER_URL,
+# POSTGRES_PORT) hem make değişkeni hem de alt süreçlerin env'i olur.
+-include .env
+export
+
 BIN      := bin/server
 PID_FILE := .server.pid
 LOG_FILE := server.log
-PORT     := 8080
+
+# API portu ADDR'den türetilir (örn. ADDR=:8090 → PORT=8090); yoksa 8080.
+ADDR ?= :8080
+PORT := $(patsubst :%,%,$(ADDR))
 
 # --- Ana hedefler ---
 
@@ -51,11 +59,14 @@ server-start: build
 	@if [ -f $(PID_FILE) ] && kill -0 $$(cat $(PID_FILE)) 2>/dev/null; then \
 		echo "⚠️  Sunucu zaten çalışıyor (PID $$(cat $(PID_FILE)))"; \
 	else \
-		echo "🚀 Sunucu başlatılıyor..."; \
-		{ [ -f .env ] && set -a && . ./.env && set +a; \
-		  $(BIN) > $(LOG_FILE) 2>&1 & echo $$! > $(PID_FILE); }; \
+		echo "🚀 Sunucu başlatılıyor (http://localhost:$(PORT))..."; \
+		$(BIN) > $(LOG_FILE) 2>&1 & echo $$! > $(PID_FILE); \
 		sleep 1; \
-		echo "   PID $$(cat $(PID_FILE)) · loglar: $(LOG_FILE)"; \
+		if kill -0 $$(cat $(PID_FILE)) 2>/dev/null; then \
+			echo "   PID $$(cat $(PID_FILE)) · loglar: $(LOG_FILE)"; \
+		else \
+			echo "❌ Sunucu başlayamadı, son loglar:"; tail -3 $(LOG_FILE); rm -f $(PID_FILE); exit 1; \
+		fi; \
 	fi
 
 server-stop:

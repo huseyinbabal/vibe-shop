@@ -773,6 +773,12 @@ vibe-shop/
   başka bir proje kullanabiliyor; Vite proxy hedefi de `VITE_API_URL` ile aynı porta
   yönlendirilebilir (varsayılan `http://localhost:8080`). Bu, dilimin "backend'e dokunma"
   sınırının kullanıcı onayıyla açılmış tek istisnasıdır.
+- **Aynı istisnanın devamı — port yapılandırması tek yerden (.env):** `Makefile` `.env`'i
+  yükler ve `PORT`'u `ADDR`'den türetir (mesajlar/`make health` doğru porta bakar);
+  `docker-compose.yml`'de Postgres host portu `${POSTGRES_PORT:-5432}` ile değiştirilebilir
+  (varsayılan 5432 aynen korunur). 5432/8080'in dolu olduğu makinelerde `.env` içinde
+  `POSTGRES_PORT`, `DATABASE_URL` ve `ADDR` birlikte güncellenir; `make start` tek komutla
+  doğru portlarda çalışır.
 
 ### 11.5 Test Stratejisi (ek)
 
