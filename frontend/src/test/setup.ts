@@ -18,3 +18,18 @@ Object.defineProperty(globalThis, "localStorage", {
   value: memoryStorage,
   configurable: true,
 })
+
+// jsdom has no matchMedia; sonner's Toaster queries it for the color scheme.
+Object.defineProperty(window, "matchMedia", {
+  configurable: true,
+  value: (query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  }),
+})

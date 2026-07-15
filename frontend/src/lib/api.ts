@@ -1,5 +1,30 @@
 import { clearTokens, getTokens, tryRefresh } from "@/lib/auth"
 
+// Shapes returned by the Go API (SPEC §7–§9).
+export type Product = { id: number; name: string; price: number }
+export type CartLine = {
+  product_id: number
+  name: string
+  price: number
+  quantity: number
+  line_total: number
+}
+export type CartResponse = { items: CartLine[]; total: number }
+export type OrderItem = {
+  id: number
+  order_id: number
+  product_id: number
+  quantity: number
+  unit_price: number
+}
+export type Order = {
+  id: number
+  user_id: string
+  total: number
+  created_at: string
+  items: OrderItem[]
+}
+
 // ApiError carries the HTTP status and the API's {"error":"..."} message so
 // pages can branch on status (404 vs 400) and show the server's wording.
 export class ApiError extends Error {
