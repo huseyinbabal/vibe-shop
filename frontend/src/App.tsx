@@ -4,6 +4,7 @@ import { Layout } from "@/components/layout"
 import { RequireAuth } from "@/components/require-auth"
 import { Toaster } from "@/components/ui/sonner"
 import LoginPage from "@/pages/login"
+import ProductDetailPage from "@/pages/product-detail"
 import ProductsPage from "@/pages/products"
 
 // Route skeleton for slice 6 (SPEC §11): remaining pages land in T44–T45.
@@ -24,7 +25,7 @@ function App() {
           }
         >
           <Route path="/" element={<ProductsPage />} />
-          <Route path="/products/:id" element={<Placeholder name="product-detail" />} />
+          <Route path="/products/:id" element={<ProductDetailPage />} />
           <Route path="/cart" element={<Placeholder name="cart" />} />
         </Route>
       </Routes>
