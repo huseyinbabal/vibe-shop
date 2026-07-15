@@ -15,6 +15,9 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
+      // Port doluysa sessizce 5174'e kayma: Keycloak webOrigins 5173'e bağlı,
+      // kayma CORS hatası üretir. Dolu ise açıkça hata ver.
+      strictPort: true,
       proxy: {
         // The SPA always calls the Go API with relative /api/... URLs; the dev
         // server forwards them so no CORS is needed on the backend. The target
