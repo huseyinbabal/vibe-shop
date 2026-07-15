@@ -376,7 +376,7 @@ Detaylı görev listesi: [todo.md](./todo.md).
 
 ---
 
-## Dilim 5 — Keycloak'a Geçiş: Tek Kimlik Sağlayıcı ← *şu anki dilim*
+## Dilim 5 — Keycloak'a Geçiş: Tek Kimlik Sağlayıcı ✅ tamamlandı
 
 > Kaynak: [SPEC.md §10](../SPEC.md). Kapsam: **eski auth (`/api/register`, `/api/login`,
 > HS256 JWT, bcrypt, `users` tablosu) kaldırılır; tek kimlik sağlayıcı Keycloak olur (local'de
@@ -529,5 +529,97 @@ taşır; söküm + kablolama (T37) eski yolu kaldırır; T38 geliştirici deneyi
 - `sub` dışındaki claim'lerin kullanımı/saklanması (email, username vb.).
 - Ürün/sepet/sipariş iş mantığında, doğrulama kurallarında veya yanıt gövdelerinde değişiklik.
 - Keycloak'ın production konfigürasyonu (TLS, gerçek kullanıcılar, `start` modu).
+
+Detaylı görev listesi: [todo.md](./todo.md).
+
+---
+
+## Dilim 6 — Frontend (SPA) ← *şu anki dilim*
+
+> Kaynak: [SPEC.md §11](../SPEC.md). Kapsam: **Vite + React + TS + shadcn/ui ile 4 sayfa
+> (login, ürün listesi, ürün detay, sepet+onay); tüm rotalar giriş korumalı; giriş Keycloak
+> ROPC ile; veri Go API'den (:8080, Vite proxy)**. Admin sayfası, sepet silme/azaltma,
+> Auth Code+PKCE, backend değişikliği bu dilimde YOK.
+
+### Mimari Kararlar
+
+- **Stack: Vite + React 19 + TS (Next.js değil).** API zaten ayrı bir Go servisi; SSR/route
+  handler katmanı gereksiz karmaşıklık olur. SPA + Vite, projenin "sade" felsefesiyle uyumlu.
+  shadcn/ui zinc temasıyla kurulur; mockup'lar zaten bu dile göre çizildi.
+- **Giriş ROPC ile (mockup'a sadakat + sadelik):** `design/01`'deki e-posta/parola formu
+  SPA'dan Keycloak token endpoint'ine `grant_type=password` isteği atar — client'ta Direct
+  Access Grants zaten açık (curl akışıyla aynı). Redirect'li Auth Code + PKCE daha "doğru"
+  ama form Keycloak sayfasına taşınırdı (keycloakify) ve dilim büyürdü; dev projesi için
+  bilinçli takas, SPEC §11.1'de belgelendi. Sonuç: "Keycloak ile devam et" butonu çıkarıldı
+  (bilinen sapma).
+- **CORS'suz mimari:** API'ye CORS eklenmez; Vite dev proxy'si `/api`'yi `:8080`'e iletir,
+  SPA istekleri origin-içi görünür. Keycloak'a giden token istekleri tarayıcıdan doğrudan
+  `:8081`'e gider → realm import'unda client'a `webOrigins: ["http://localhost:5173"]`
+  eklenir (tek backend-infra dokunuşu; container yeniden yaratılınca etkinleşir).
+- **Token yaşam döngüsü:** access (~5 dk) + refresh token `localStorage`'da; `lib/api.ts`
+  `401`'de **tek sefer** refresh + retry yapar, ikinci başarısızlıkta oturumu temizleyip
+  `/login`'e atar. Realm token ömürleri değiştirilmez ("önce sor").
+- **Koruma tasarımı:** `<RequireAuth>` sarmalayıcısı token yoksa `/login`'e `state.from` ile
+  yönlendirir; login başarısında geldiği rotaya döner. `/login` token varken `/`'a yönlendirir.
+  Kullanıcının açık kararı gereği ürün sayfaları da (API'de public olmasına rağmen) korumalıdır.
+- **Test deseni — MSW ile ağ, checkpoint'te gerçek stack:** bileşen/akış testleri Vitest +
+  Testing Library + MSW ile (frontend'de DB'siz test için standart); gerçek API + Keycloak
+  entegrasyonu dilim 5'teki gibi manuel uçtan uca checkpoint'te kanıtlanır.
+- **Sepet salt-okunur kalemler:** backend `AddOrIncrement`-only olduğundan `design/04`'teki
+  stepper/çöp ikonları uygulanmaz; satırlar adetle gösterilir. Silme/azaltma backend ucu
+  ayrı dilim ("önce sor").
+
+### Bağımlılık Grafiği
+
+```
+frontend/ iskeleti — Vite+TS+Tailwind+shadcn+proxy (T40)
+        │                       keycloak realm: webOrigins (T41)  ← bağımsız, küçük
+        ▼
+              CHECKPOINT V (npm run dev ayakta + npm run build temiz)
+
+lib/auth.tsx + lib/api.ts + login sayfası + RequireAuth (T42)  ← T40, T41
+        │
+        ▼
+              CHECKPOINT W (gerçek Keycloak ile giriş; token'sız rota /login'e düşer)
+
+navbar + ürün listesi sayfası (T43)
+        │
+        ▼
+ürün detay + sepete ekle (T44)
+        │
+        ▼
+sepet + sipariş onayı görünümü (T45)
+        │
+        ▼
+              CHECKPOINT X (uçtan uca: login → listele → detay → sepete ekle → sipariş → onay)
+
+Kalite kapısı + tasarım karşılaştırması (T46)
+        │
+        ▼
+              CHECKPOINT Y (final, insan onayı)
+```
+
+### Dikey Dilimleme Yaklaşımı
+
+Önce iskelet + kimlik (kapı), sonra üç kullanıcı yolu sırayla: **gör (liste/detay) →
+ekle (sepet) → tamamla (sipariş)**. Her sayfa kendi görevinde testleriyle biter; gerçek
+stack'e karşı doğrulama iki checkpoint'te (W: kimlik, X: alışveriş akışı) yapılır.
+Go tarafında hiçbir dosya değişmez.
+
+### Riskler
+
+| Risk | Etki | Önlem |
+|------|------|-------|
+| ROPC'de Keycloak CORS reddi (webOrigins eksik/yanlış) | Yüksek | T41 curl'le değil tarayıcıdan doğrulanır (CHECKPOINT W canlı giriş) |
+| Access token 5 dk'da düşer, akış ortasında 401 | Orta | `lib/api.ts` tek-sefer refresh+retry; testte MSW ile 401→refresh senaryosu |
+| "Pixel-perfect" beklentisi ile AI mockup tutarsızlıkları | Orta | Mockup'lar referans, birebir kopya değil; bilinen sapmalar SPEC §11.1'de; CHECKPOINT Y'de yan yana karşılaştırma |
+| shadcn/Tailwind sürüm uyumsuzlukları (hızlı değişen ekosistem) | Düşük | İskelet resmi CLI'larla kurulur (`npm create vite`, `npx shadcn init`); sürümler lock dosyasında sabitlenir |
+| localStorage'da token XSS riski | Düşük (dev) | Bilinçli dev takası; prod sertleştirme (httpOnly cookie/BFF) kapsam dışı, SPEC'te "önce sor" |
+
+### Kapsam Dışı (bilerek, SPEC §11.6 ile uyumlu)
+- Admin sayfası (design/06), ürün yazma UI'ı.
+- Sepette adet azaltma/satır silme (backend ucu yok).
+- Auth Code + PKCE, keycloakify teması, httpOnly cookie/BFF.
+- Go API'de değişiklik (CORS dahil), Makefile frontend hedefleri.
 
 Detaylı görev listesi: [todo.md](./todo.md).

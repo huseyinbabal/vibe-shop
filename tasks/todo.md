@@ -399,3 +399,98 @@ Detaylar: [plan.md](./plan.md#dilim-5--keycloaka-geçiş-tek-kimlik-sağlayıcı
   - Yapılacak: `go mod tidy` son kontrol (keyfunc kayıtlı, bcrypt yok).
   - Doğrulama: `gofmt -l .` boş · `go vet ./...` temiz · `go test ./...` yeşil (Docker açık).
 - [ ] **CHECKPOINT U (final)** — İnsan onayı; dilim tamam.
+
+---
+
+## Dilim 6 — Frontend (SPA) ← *şu anki dilim*
+
+Detaylar: [plan.md](./plan.md#dilim-6--frontend-spa--şu-anki-dilim) · Spec: [../SPEC.md](../SPEC.md) §11
+
+### Faz 0 — İskelet
+- [ ] **T40 — frontend/ iskeleti: Vite + React + TS + Tailwind + shadcn/ui**
+  - Yapılacak: `npm create vite@latest frontend -- --template react-ts`; Tailwind
+    (`@tailwindcss/vite`) ve shadcn/ui (`npx shadcn@latest init`, zinc teması) kurulur;
+    `vite.config.ts`'e `/api` → `http://localhost:8080` proxy'si eklenir; Vitest + Testing
+    Library + MSW dev bağımlılıkları eklenir; `App.tsx`'te React Router ile boş rota iskeleti
+    (`/login`, `/`, `/products/:id`, `/cart`).
+  - Kabul: `npm run dev` 5173'te açılır; proxy üzerinden `/api/products` gerçek API'ye ulaşır;
+    `npm run build` ve `npm run lint` temiz; Go tarafında hiçbir dosya değişmez.
+  - Doğrulama: `npm run dev` + tarayıcıda `http://localhost:5173`; `curl localhost:5173/api/products`.
+  - Dosyalar: `frontend/` (yeni ağaç). **Kapsam: M**
+- [ ] **T41 — Keycloak client'a webOrigins**
+  - Yapılacak: `keycloak/vibe-shop-realm.json`'da `vibe-shop-api` client'ına
+    `"webOrigins": ["http://localhost:5173"]` eklenir; Keycloak container'ı yeniden yaratılır.
+  - Kabul: tarayıcıdan (origin 5173) token endpoint'ine `grant_type=password` isteği CORS
+    engeline takılmaz.
+  - Doğrulama: `docker compose up -d --force-recreate keycloak` sonrası tarayıcı konsolundan
+    fetch denemesi (veya CHECKPOINT W'de canlı giriş).
+  - Dosyalar: `keycloak/vibe-shop-realm.json`. **Kapsam: S**
+- [ ] **CHECKPOINT V** — `npm run dev` ayakta, proxy çalışıyor, `npm run build` temiz.
+
+### Faz 1 — Kimlik dikey dilimi
+- [ ] **T42 — auth altyapısı + login sayfası + rota koruması**
+  - Yapılacak: `lib/auth.tsx` — AuthContext: `login(email, password)` Keycloak token
+    endpoint'ine ROPC isteği atar, `access_token`/`refresh_token`'ı localStorage'da saklar;
+    `logout()` temizler; `refresh()` tek sefer yeniler. `lib/api.ts` — fetch sarmalayıcı:
+    göreli `/api/...`, `Authorization: Bearer` ekler, `401` → refresh + retry, olmadı →
+    oturumu temizle + `/login`. `components/require-auth.tsx` — token yoksa `state.from` ile
+    `/login`'e. `pages/login.tsx` — `design/01`: ortalanmış kart, E-posta/Parola alanları,
+    "Giriş Yap" butonu, `invalid_grant` → "E-posta veya parola hatalı" form hatası; girişte
+    geldiği rotaya döner; token varken `/login` → `/`.
+  - Kabul: token'sız her rota `/login`'e düşer; geçerli kimlikle giriş çalışır; yanlış parola
+    form hatası gösterir; 401→refresh→retry akışı çalışır.
+  - Doğrulama: `npm run test` — MSW ile login başarı/başarısızlık, guard yönlendirmesi,
+    api 401→refresh senaryoları yeşil.
+  - Dosyalar: `frontend/src/lib/auth.tsx`, `lib/api.ts`, `components/require-auth.tsx`,
+    `pages/login.tsx`, testleri. **Kapsam: L**
+  - Bağımlılık: T40, T41.
+- [ ] **CHECKPOINT W** — Gerçek stack'le (make start + npm run dev): token'sız `/` → `/login`;
+  `testuser`/`test1234` girişi başarılı; yanlış parola hata mesajı; çıkış sonrası tekrar `/login`.
+
+### Faz 2 — Ürün sayfaları
+- [ ] **T43 — navbar + ürün listesi sayfası**
+  - Yapılacak: `components/navbar.tsx` — `design/02` üst barı: vibe-shop wordmark, "Ürünler",
+    arama girdisi (görsel; filtre client-side isteğe bağlı), sepet ikonu + kalem sayısı rozeti,
+    kullanıcı menüsü (Çıkış). `pages/products.tsx` — `GET /api/products`'tan 4 kolonlu kart
+    grid'i: zinc-100 görsel alanı (placeholder), ad, `₺` fiyat (`Intl.NumberFormat('tr-TR')`),
+    "Sepete Ekle" butonu (`POST /api/cart`, quantity 1, başarıda rozet güncellenir + toast).
+    Boş liste durumu.
+  - Kabul: liste gerçek API verisiyle render olur; sepete ekleme çalışır; boş durum düzgün.
+  - Doğrulama: `npm run test` — MSW ile liste render, boş durum, sepete ekleme istek gövdesi.
+  - Dosyalar: `frontend/src/components/navbar.tsx`, `pages/products.tsx`, testleri. **Kapsam: M**
+  - Bağımlılık: T42.
+- [ ] **T44 — ürün detay sayfası**
+  - Yapılacak: `pages/product-detail.tsx` — `design/03`: breadcrumb, sol büyük zinc-100 görsel,
+    sağda ad + fiyat + açıklama metni + adet stepper'ı (- n +, min 1) + "Sepete Ekle"
+    (`POST /api/cart` seçili adetle) + "Kargo ve İade"/"Malzeme" akordeonu (statik metin).
+    Olmayan id → 404 durumu ("Ürün bulunamadı" + listeye dön).
+  - Kabul: detay gerçek veriyle render; adet stepper'ı doğru gövde gönderir; 404 durumu düzgün.
+  - Doğrulama: `npm run test` — MSW ile render, stepper, POST gövdesi, 404 senaryosu.
+  - Dosyalar: `frontend/src/pages/product-detail.tsx`, testi. **Kapsam: M**
+  - Bağımlılık: T43.
+
+### Faz 3 — Sepet ve sipariş
+- [ ] **T45 — sepet sayfası + sipariş onayı görünümü**
+  - Yapılacak: `pages/cart.tsx` — `design/04`: solda kalem tablosu (görsel placeholder, ad,
+    birim fiyat, adet **salt-okunur**, satır toplamı), sağda "Sipariş Özeti" kartı (ara toplam,
+    kargo "Ücretsiz", toplam, "Siparişi Tamamla"). Buton `POST /api/orders` çağırır; başarıda
+    `design/05` onay görünümü (yeşil check, "Siparişin Alındı", sipariş no, kalemler snapshot
+    fiyatlarıyla, toplam, "Alışverişe Devam Et" → `/`); sepet rozeti sıfırlanır. Boş sepet
+    durumu: mesaj + listeye yönlendiren buton ("Siparişi Tamamla" gizli/pasif).
+  - Kabul: toplamlar API'dekiyle aynı; sipariş sonrası onay görünümü + boş sepet; stepper/silme
+    bilinçli olarak yok (SPEC §11.1).
+  - Doğrulama: `npm run test` — MSW ile dolu/boş sepet, sipariş akışı, toplam hesapları.
+  - Dosyalar: `frontend/src/pages/cart.tsx`, testi. **Kapsam: M**
+  - Bağımlılık: T43.
+- [ ] **CHECKPOINT X** — Uçtan uca gerçek stack'le: login → ürünler listelenir → detaydan 2 adet
+  sepete ekle → sepette doğru toplam → "Siparişi Tamamla" → onay görünümü (no + kalemler +
+  toplam) → sepet boş; `testuser2` ile girişte sepet boş (izolasyon).
+
+### Faz 4 — Kalite kapısı
+- [ ] **T46 — Kalite + tasarım karşılaştırması**
+  - Yapılacak: `npm run lint`/`build`/`test` son koşu; her sayfanın `design/` mockup'ıyla yan
+    yana karşılaştırılması, kalan görsel farkların düzeltilmesi veya SPEC §11.1'e bilinen sapma
+    olarak eklenmesi; README/SPEC komut tablolarının güncel olduğunun kontrolü.
+  - Doğrulama: `npm run build` + `npm run lint` + `npm run test` temiz · `go test ./...`
+    etkilenmedi · görsel karşılaştırma tamam.
+- [ ] **CHECKPOINT Y (final)** — İnsan onayı; dilim tamam.

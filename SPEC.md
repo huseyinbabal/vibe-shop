@@ -23,7 +23,10 @@
    çünkü "her kullanıcı yalnızca kendi sepetini/siparişlerini görür" kuralı bir kullanıcı kimliği gerektirir.
 5. **Keycloak'a geçiş — tek kimlik sağlayıcı** (eski `/api/register` + `/api/login` (HS256 JWT)
    kaldırılır; tüm korumalı uçlar — sepet, sipariş ve artık ürün yazma uçları — yalnızca geçerli
-   bir Keycloak token'ı ile çalışır; `GET /api/products*` herkese açık kalır) ← *şu anki dilim*, bkz. §10.
+   bir Keycloak token'ı ile çalışır; `GET /api/products*` herkese açık kalır) ✅ tamamlandı, bkz. §10.
+6. **Frontend (SPA)** — ürün listesi, ürün detay, sepet ve Keycloak girişli login sayfaları;
+   giriş yapmamış herkes login'e yönlendirilir; veri Go API'den (:8080); `design/` mockup'larına
+   sadık, shadcn/ui ile ← *şu anki dilim*, bkz. §11.
 
 ## 2. Komutlar (Commands)
 
@@ -667,3 +670,139 @@ vibe-shop/
 - Eski auth'tan ölü kod bırakma (`users` tablosu, bcrypt, HS256 token kodu "belki lazım olur"
   diye tutulmaz).
 - `keycloak/vibe-shop-realm.json`'daki dev credential'ları production için kullanma/önerme.
+
+---
+
+## 11. Dilim 6 — Frontend (SPA): Ürünler, Sepet ve Keycloak Girişi
+
+### 11.1 Amaç
+
+vibe-shop'a, Go API'sini (:8080) tüketen bir web arayüzü eklenir. Görsel yön `design/`
+klasöründeki mockup'lardır (shadcn/ui görünümü); sayfalar bu çizimlere **mümkün olan en yakın**
+şekilde, shadcn/ui bileşenleriyle inşa edilir.
+
+| Sayfa | Rota | Kaynak tasarım | Veri |
+|---|---|---|---|
+| Login | `/login` | `design/01-login.png` | Keycloak token endpoint'i |
+| Ürün listesi | `/` | `design/02-product-list.png` | `GET /api/products` |
+| Ürün detay | `/products/:id` | `design/03-product-detail.png` | `GET /api/products/{id}` + `POST /api/cart` |
+| Sepet | `/cart` | `design/04-cart.png` | `GET /api/cart` + `POST /api/orders` |
+| Sipariş onayı | `/cart` akışının sonucu | `design/05-order-confirmation.png` | `POST /api/orders` yanıtı |
+
+- **Koruma kuralı (kullanıcı kararı):** giriş yapmamış kullanıcı **hangi rotaya girerse girsin**
+  `/login`'e yönlendirilir — ürün listesi API'de public olsa bile SPA'da giriş ister.
+  Login olan kullanıcı `/login`'e giderse `/`'a yönlendirilir.
+- **Giriş (Keycloak, ROPC):** login sayfasındaki e-posta/parola formu, Keycloak'ın token
+  endpoint'ine **Direct Access Grant** (`grant_type=password`, client `vibe-shop-api` — realm'de
+  zaten açık) ile doğrudan istek atar; dönen `access_token`/`refresh_token` saklanır. Bu bilinçli
+  bir sadelik tercihidir (dev/öğrenme projesi): Authorization Code + PKCE yönlendirme akışına
+  geçiş ayrı bir dilim adayıdır ("önce sor"). Çıkış = token'ları silip `/login`'e dönmek.
+- **Token yenileme:** Keycloak access token'ı kısa ömürlüdür (~5 dk). API çağrısı `401` dönerse
+  istemci **bir kez** `refresh_token` ile yeniler ve isteği tekrarlar; yenileme de başarısızsa
+  token'lar silinir ve `/login`'e yönlendirilir. Realm'in token ömürlerini değiştirmek "önce sor".
+- **CORS/ağ:** Go API'ye CORS eklenmez; dev'de Vite proxy'si `/api` → `http://localhost:8080`'e
+  iletir (SPA istekleri hep göreli `/api/...`). Keycloak'a tarayıcıdan doğrudan istek için
+  client'a `webOrigins: ["http://localhost:5173"]` eklenir (realm import dosyasında).
+- **Bilinen tasarım sapmaları (bilinçli):**
+  - `design/04-cart.png`'deki adet artır/azalt ve satır silme kontrolleri **bu dilimde yok** —
+    backend desteklemiyor (SPEC §9.6 "önce sor"); sepet satırları adetleriyle salt-okunur gösterilir.
+  - `design/01-login.png`'deki "Keycloak ile devam et" butonu yoktur; form zaten Keycloak'a
+    gittiği için ikinci bir yol koymak kafa karıştırır. Form alanları + hata durumu birebir uygulanır.
+  - Admin sayfası (`design/06`) bu dilimin kapsamı dışındadır.
+
+**Başarı ölçütü:** Backend + Keycloak ayaktayken `npm run dev` ile SPA açılır; token'sız her
+rota `/login`'e düşer; `testuser`/`test1234` ile giriş çalışır; ürünler API'den listelenir,
+detay sayfasından sepete ürün eklenir, sepette doğru toplam görünür, "Siparişi Tamamla" siparişi
+oluşturup onay görünümünü (sipariş no + kalemler + toplam) gösterir ve sepet boşalır; çıkış
+sonrası korumalı rotalar yine `/login`'e düşer; `npm run build`, `npm run lint` ve
+`npm run test` temiz.
+
+### 11.2 Komutlar (ek)
+
+| Komut | Amaç |
+|-------|------|
+| `cd frontend && npm install` | Frontend bağımlılıklarını kurar |
+| `cd frontend && npm run dev` | Vite dev sunucusu — `http://localhost:5173` (proxy: `/api` → `:8080`) |
+| `cd frontend && npm run build` | Production build (`tsc` + `vite build`) |
+| `cd frontend && npm run test` | Vitest ile birim/bileşen testleri |
+| `cd frontend && npm run lint` | ESLint |
+
+> Tam akış için üç süreç gerekir: `make start` (Postgres + Keycloak + API) ve `npm run dev`.
+
+### 11.3 Proje Yapısı (ek)
+
+```
+vibe-shop/
+  frontend/                    # SPA — Go modülünden tamamen ayrı
+    package.json               # React 19 + Vite + TypeScript
+    vite.config.ts             # @tailwindcss/vite + /api proxy → :8080
+    components.json            # shadcn/ui yapılandırması
+    src/
+      main.tsx                 # router + AuthProvider kablolaması
+      lib/
+        api.ts                 # fetch sarmalayıcı: Bearer ekler, 401'de bir kez refresh
+        auth.tsx               # AuthContext: login (ROPC), logout, token saklama
+      components/
+        ui/                    # shadcn/ui bileşenleri (üretilmiş)
+        navbar.tsx             # wordmark + Ürünler + sepet rozeti + kullanıcı/çıkış
+        require-auth.tsx       # korumalı rota sarmalayıcı → /login
+      pages/
+        login.tsx              # design/01
+        products.tsx           # design/02
+        product-detail.tsx     # design/03
+        cart.tsx               # design/04 + onay görünümü design/05
+      pages/*.test.tsx         # Vitest + Testing Library + MSW
+  keycloak/vibe-shop-realm.json  # + webOrigins (5173)
+```
+
+### 11.4 Kod Stili (ek)
+
+- **Stack:** Vite + React 19 + TypeScript (strict) + Tailwind CSS + **shadcn/ui** (zinc teması).
+  Next.js/SSR yok — API ayrı olduğundan SPA yeterli, proje sadeliği korunur.
+- **Bileşenler:** shadcn/ui üretilen bileşenler `components/ui/` altında kalır ve **elle
+  değiştirilmez**; özelleştirme kompozisyonla yapılır. Sayfalar `pages/`, paylaşılanlar
+  `components/` altında; dosya adları `kebab-case.tsx`.
+- **Veri erişimi tek yerden:** tüm HTTP istekleri `lib/api.ts` üzerinden geçer (göreli `/api/...`);
+  sayfalar `fetch`'i doğrudan çağırmaz. Token yalnızca `lib/auth.tsx` tarafından yönetilir.
+- **Görünüm dili (mockup'larla eşleşen):** zinc nötr palet, tek koyu birincil buton,
+  `zinc-100` zeminli ürün görselleri, ince `zinc-200` border'lı `rounded-lg` kartlar, Inter.
+  Fiyat biçimi `₺249,90` (`Intl.NumberFormat('tr-TR')`).
+- Durum yönetimi için ek kütüphane yok (React state + context yeterli); yeni bağımlılık "önce sor".
+
+### 11.5 Test Stratejisi (ek)
+
+- **Çerçeve:** Vitest + React Testing Library + **MSW** (ağ katmanı testte taklit edilir —
+  DB'siz frontend testinde endüstri standardı; gerçek API/Keycloak entegrasyonu manuel
+  checkpoint'te kanıtlanır, dilim 5'teki desenle aynı).
+- Kapsanacak davranışlar:
+  - token'sız korumalı rota → `/login`'e yönlendirme; login sonrası hedefe dönüş.
+  - login: geçersiz kimlik → form hatası (`invalid_grant` → "E-posta veya parola hatalı");
+    başarı → token saklanır ve yönlendirilir.
+  - `lib/api.ts`: `401` → bir kez refresh + retry; refresh başarısız → token'lar silinir, `/login`.
+  - ürün listesi: API'den gelen ürünler kart olarak render edilir; boş liste durumu.
+  - ürün detay: adet seçimi + "Sepete Ekle" → doğru gövde ve `Authorization` header'ı ile `POST /api/cart`.
+  - sepet: kalemler + satır/genel toplam; "Siparişi Tamamla" → onay görünümü; boş sepet durumu.
+- **Geçiş ölçütü:** `npm run test` yeşil · `npm run build` temiz · `npm run lint` temiz ·
+  Go tarafında `go test ./...` etkilenmeden yeşil kalır.
+
+### 11.6 Sınırlar (ek/değişiklik)
+
+**Her zaman yap (ek):**
+- Veriyi yalnızca Go API'den al; SPA içinde ürün/sepet verisi hardcode etme.
+- Token'ı yalnızca `lib/auth.tsx` yönetsin; `Authorization` header'ı tek yerden eklensin.
+- Tasarım kararlarında `design/` mockup'larını referans al; bilinçli sapmaları SPEC'e yaz.
+- Backend'e ve `migrations/`'a dokunma (yalnızca `keycloak/vibe-shop-realm.json`'a `webOrigins` eklenir).
+
+**Önce sor (ek):**
+- Yeni npm bağımlılığı eklemeden önce (kurulum iskeletinin getirdikleri + MSW hariç).
+- ROPC yerine Authorization Code + PKCE'ye geçmeden önce; realm token ömürlerini değiştirmeden önce.
+- Sepette adet azaltma/satır silme için backend ucu eklemeden önce (ayrı dilim).
+- Admin sayfasını (design/06) inşa etmeden önce; Go API'ye CORS eklemeden önce.
+- Makefile'a frontend hedefleri eklemeden önce.
+
+**Asla yapma (ek):**
+- Token'ları URL'de taşıma veya loglama; parolayı Keycloak dışına gönderme.
+- `components/ui/` altındaki üretilmiş shadcn dosyalarını elle yamalama.
+- API'nin davranışına SPA tarafında güvenmemek gerekeni: istemci doğrulaması API doğrulamasının
+  yerine geçmez (400'ler yine de düzgün gösterilir).
+- Backend Go kodunda bu dilim kapsamında değişiklik yapma.
