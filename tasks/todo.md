@@ -407,7 +407,7 @@ Detaylar: [plan.md](./plan.md#dilim-5--keycloaka-geçiş-tek-kimlik-sağlayıcı
 Detaylar: [plan.md](./plan.md#dilim-6--frontend-spa--şu-anki-dilim) · Spec: [../SPEC.md](../SPEC.md) §11
 
 ### Faz 0 — İskelet
-- [ ] **T40 — frontend/ iskeleti: Vite + React + TS + Tailwind + shadcn/ui**
+- [x] **T40 — frontend/ iskeleti: Vite + React + TS + Tailwind + shadcn/ui**
   - Yapılacak: `npm create vite@latest frontend -- --template react-ts`; Tailwind
     (`@tailwindcss/vite`) ve shadcn/ui (`npx shadcn@latest init`, zinc teması) kurulur;
     `vite.config.ts`'e `/api` → `http://localhost:8080` proxy'si eklenir; Vitest + Testing
@@ -417,7 +417,7 @@ Detaylar: [plan.md](./plan.md#dilim-6--frontend-spa--şu-anki-dilim) · Spec: [.
     `npm run build` ve `npm run lint` temiz; Go tarafında hiçbir dosya değişmez.
   - Doğrulama: `npm run dev` + tarayıcıda `http://localhost:5173`; `curl localhost:5173/api/products`.
   - Dosyalar: `frontend/` (yeni ağaç). **Kapsam: M**
-- [ ] **T41 — Keycloak client'a webOrigins**
+- [x] **T41 — Keycloak client'a webOrigins**
   - Yapılacak: `keycloak/vibe-shop-realm.json`'da `vibe-shop-api` client'ına
     `"webOrigins": ["http://localhost:5173"]` eklenir; Keycloak container'ı yeniden yaratılır.
   - Kabul: tarayıcıdan (origin 5173) token endpoint'ine `grant_type=password` isteği CORS
@@ -425,10 +425,10 @@ Detaylar: [plan.md](./plan.md#dilim-6--frontend-spa--şu-anki-dilim) · Spec: [.
   - Doğrulama: `docker compose up -d --force-recreate keycloak` sonrası tarayıcı konsolundan
     fetch denemesi (veya CHECKPOINT W'de canlı giriş).
   - Dosyalar: `keycloak/vibe-shop-realm.json`. **Kapsam: S**
-- [ ] **CHECKPOINT V** — `npm run dev` ayakta, proxy çalışıyor, `npm run build` temiz.
+- [x] **CHECKPOINT V** — `npm run dev` ayakta, proxy çalışıyor, `npm run build` temiz.
 
 ### Faz 1 — Kimlik dikey dilimi
-- [ ] **T42 — auth altyapısı + login sayfası + rota koruması**
+- [x] **T42 — auth altyapısı + login sayfası + rota koruması**
   - Yapılacak: `lib/auth.tsx` — AuthContext: `login(email, password)` Keycloak token
     endpoint'ine ROPC isteği atar, `access_token`/`refresh_token`'ı localStorage'da saklar;
     `logout()` temizler; `refresh()` tek sefer yeniler. `lib/api.ts` — fetch sarmalayıcı:
@@ -444,11 +444,11 @@ Detaylar: [plan.md](./plan.md#dilim-6--frontend-spa--şu-anki-dilim) · Spec: [.
   - Dosyalar: `frontend/src/lib/auth.tsx`, `lib/api.ts`, `components/require-auth.tsx`,
     `pages/login.tsx`, testleri. **Kapsam: L**
   - Bağımlılık: T40, T41.
-- [ ] **CHECKPOINT W** — Gerçek stack'le (make start + npm run dev): token'sız `/` → `/login`;
+- [x] **CHECKPOINT W** — Gerçek stack'le (make start + npm run dev): token'sız `/` → `/login`;
   `testuser`/`test1234` girişi başarılı; yanlış parola hata mesajı; çıkış sonrası tekrar `/login`.
 
 ### Faz 2 — Ürün sayfaları
-- [ ] **T43 — navbar + ürün listesi sayfası**
+- [x] **T43 — navbar + ürün listesi sayfası**
   - Yapılacak: `components/navbar.tsx` — `design/02` üst barı: vibe-shop wordmark, "Ürünler",
     arama girdisi (görsel; filtre client-side isteğe bağlı), sepet ikonu + kalem sayısı rozeti,
     kullanıcı menüsü (Çıkış). `pages/products.tsx` — `GET /api/products`'tan 4 kolonlu kart
@@ -459,7 +459,7 @@ Detaylar: [plan.md](./plan.md#dilim-6--frontend-spa--şu-anki-dilim) · Spec: [.
   - Doğrulama: `npm run test` — MSW ile liste render, boş durum, sepete ekleme istek gövdesi.
   - Dosyalar: `frontend/src/components/navbar.tsx`, `pages/products.tsx`, testleri. **Kapsam: M**
   - Bağımlılık: T42.
-- [ ] **T44 — ürün detay sayfası**
+- [x] **T44 — ürün detay sayfası**
   - Yapılacak: `pages/product-detail.tsx` — `design/03`: breadcrumb, sol büyük zinc-100 görsel,
     sağda ad + fiyat + açıklama metni + adet stepper'ı (- n +, min 1) + "Sepete Ekle"
     (`POST /api/cart` seçili adetle) + "Kargo ve İade"/"Malzeme" akordeonu (statik metin).
@@ -470,7 +470,7 @@ Detaylar: [plan.md](./plan.md#dilim-6--frontend-spa--şu-anki-dilim) · Spec: [.
   - Bağımlılık: T43.
 
 ### Faz 3 — Sepet ve sipariş
-- [ ] **T45 — sepet sayfası + sipariş onayı görünümü**
+- [x] **T45 — sepet sayfası + sipariş onayı görünümü**
   - Yapılacak: `pages/cart.tsx` — `design/04`: solda kalem tablosu (görsel placeholder, ad,
     birim fiyat, adet **salt-okunur**, satır toplamı), sağda "Sipariş Özeti" kartı (ara toplam,
     kargo "Ücretsiz", toplam, "Siparişi Tamamla"). Buton `POST /api/orders` çağırır; başarıda
@@ -482,12 +482,12 @@ Detaylar: [plan.md](./plan.md#dilim-6--frontend-spa--şu-anki-dilim) · Spec: [.
   - Doğrulama: `npm run test` — MSW ile dolu/boş sepet, sipariş akışı, toplam hesapları.
   - Dosyalar: `frontend/src/pages/cart.tsx`, testi. **Kapsam: M**
   - Bağımlılık: T43.
-- [ ] **CHECKPOINT X** — Uçtan uca gerçek stack'le: login → ürünler listelenir → detaydan 2 adet
+- [x] **CHECKPOINT X** — Uçtan uca gerçek stack'le: login → ürünler listelenir → detaydan 2 adet
   sepete ekle → sepette doğru toplam → "Siparişi Tamamla" → onay görünümü (no + kalemler +
   toplam) → sepet boş; `testuser2` ile girişte sepet boş (izolasyon).
 
 ### Faz 4 — Kalite kapısı
-- [ ] **T46 — Kalite + tasarım karşılaştırması**
+- [x] **T46 — Kalite + tasarım karşılaştırması**
   - Yapılacak: `npm run lint`/`build`/`test` son koşu; her sayfanın `design/` mockup'ıyla yan
     yana karşılaştırılması, kalan görsel farkların düzeltilmesi veya SPEC §11.1'e bilinen sapma
     olarak eklenmesi; README/SPEC komut tablolarının güncel olduğunun kontrolü.
