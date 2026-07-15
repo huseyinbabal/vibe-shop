@@ -14,9 +14,14 @@ import (
 	"vibe-shop/internal/product"
 )
 
-const addr = ":8080"
+const defaultAddr = ":8080"
 
 func main() {
+	addr := os.Getenv("ADDR")
+	if addr == "" {
+		addr = defaultAddr
+	}
+
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		log.Fatal("DATABASE_URL is not set")

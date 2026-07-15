@@ -768,6 +768,11 @@ vibe-shop/
   `zinc-100` zeminli ürün görselleri, ince `zinc-200` border'lı `rounded-lg` kartlar, Inter.
   Fiyat biçimi `₺249,90` (`Intl.NumberFormat('tr-TR')`).
 - Durum yönetimi için ek kütüphane yok (React state + context yeterli); yeni bağımlılık "önce sor".
+- **Onaylı istisna (2026-07-15):** API'nin dinlediği adres `ADDR` env değişkeninden okunur
+  (boşsa `:8080` — mevcut davranış birebir korunur). Gerekçe: geliştirme makinesinde 8080'i
+  başka bir proje kullanabiliyor; Vite proxy hedefi de `VITE_API_URL` ile aynı porta
+  yönlendirilebilir (varsayılan `http://localhost:8080`). Bu, dilimin "backend'e dokunma"
+  sınırının kullanıcı onayıyla açılmış tek istisnasıdır.
 
 ### 11.5 Test Stratejisi (ek)
 
