@@ -1,6 +1,6 @@
 import { Link } from "expo-router"
 import { useState } from "react"
-import { Pressable, Text, View } from "react-native"
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from "react-native"
 
 import { Field } from "../../components/field"
 import { EmailTakenError, register } from "../../lib/auth"
@@ -34,7 +34,15 @@ export default function RegisterScreen() {
   }
 
   return (
-    <View className="flex-1 items-center justify-center bg-zinc-50 p-6">
+    <KeyboardAvoidingView
+      className="flex-1"
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
+      <ScrollView
+        className="bg-zinc-50"
+        contentContainerClassName="flex-grow items-center justify-center p-6"
+        keyboardShouldPersistTaps="handled"
+      >
       <View className="w-full max-w-md rounded-xl border border-zinc-200 bg-white p-8 shadow-sm">
         <Text className="text-center text-2xl font-bold text-zinc-900">vibe-shop</Text>
         <Text className="mt-6 text-center text-2xl font-bold text-zinc-900">Kayıt Ol</Text>
@@ -54,6 +62,9 @@ export default function RegisterScreen() {
             testID="register-password"
             placeholder="en az 8 karakter"
             secureTextEntry
+            // iOS'un Automatic Strong Password overlay'i alanı ele geçirip
+            // yazılan metni yutuyor; oneTimeCode bunu devre dışı bırakır.
+            textContentType="oneTimeCode"
             value={password}
             onChangeText={setPassword}
           />
@@ -75,6 +86,7 @@ export default function RegisterScreen() {
           </Link>
         </View>
       </View>
-    </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   )
 }

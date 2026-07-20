@@ -24,6 +24,14 @@ export class EmailTakenError extends Error {
   }
 }
 
+// Hermes'in URLSearchParams'ı eksik (toString desteklenmiyor); form gövdesini
+// elle kodluyoruz.
+function formBody(fields: Record<string, string>): string {
+  return Object.entries(fields)
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join("&")
+}
+
 let tokens: Tokens | null = null
 let ready = false
 const listeners = new Set<() => void>()
@@ -76,12 +84,12 @@ export async function login(email: string, password: string): Promise<void> {
   const res = await fetch(TOKEN_ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
+    body: formBody({
       grant_type: "password",
       client_id: CLIENT_ID,
       username: email,
       password,
-    }).toString(),
+    }),
   })
   if (res.status === 400 || res.status === 401) throw new InvalidCredentialsError()
   if (!res.ok) throw new Error(`login failed: ${res.status}`)
@@ -114,11 +122,11 @@ export async function tryRefresh(): Promise<boolean> {
   const res = await fetch(TOKEN_ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
+    body: formBody({
       grant_type: "refresh_token",
       client_id: CLIENT_ID,
       refresh_token: tokens.refreshToken,
-    }).toString(),
+    }),
   }).catch(() => null)
   if (!res || !res.ok) {
     clearTokens()

@@ -4,6 +4,13 @@ appId: com.vibeshop.app
 ---
 - launchApp:
     clearState: true
+- runFlow:
+    when:
+      visible:
+        id: "nav-logout"
+    commands:
+      - tapOn:
+          id: "nav-logout"
 - assertVisible:
     id: "login-email"
 - tapOn:
