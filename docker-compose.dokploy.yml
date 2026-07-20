@@ -17,35 +17,25 @@ services:
       timeout: 5s
       retries: 10
 
-  # One-shot: applies migrations in filename order exactly once each, tracked
-  # in a schema_migrations table so re-deploys stay idempotent.
+  # One-shot: applies migrations in filename order exactly once each (see
+  # migrations/apply.sh). SQL baked into the image — no bind mounts, so this
+  # works when Dokploy clones the repo into its own container.
   migrate:
-    image: postgres:16-alpine
+    build: ./migrations
+    image: ghcr.io/huseyinbabal/vibe-shop-migrate:latest
     restart: "no"
     depends_on:
       postgres:
         condition: service_healthy
     environment:
+      PGHOST: postgres
+      PGUSER: vibeshop
       PGPASSWORD: vibeshop
-    volumes:
-      - ./migrations:/migrations:ro
-    entrypoint: /bin/sh
-    command:
-      - -ec
-      - |
-        psql -h postgres -U vibeshop -d vibeshop -c "CREATE TABLE IF NOT EXISTS schema_migrations (filename TEXT PRIMARY KEY)"
-        for f in /migrations/*.sql; do
-          name=$$(basename "$$f")
-          if [ "$$(psql -h postgres -U vibeshop -d vibeshop -tAc "SELECT 1 FROM schema_migrations WHERE filename='$$name'")" = "1" ]; then
-            echo "skip $$name"; continue
-          fi
-          echo "apply $$name"
-          psql -h postgres -U vibeshop -d vibeshop -v ON_ERROR_STOP=1 -f "$$f"
-          psql -h postgres -U vibeshop -d vibeshop -c "INSERT INTO schema_migrations (filename) VALUES ('$$name')"
-        done
+      PGDATABASE: vibeshop
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.3
+    build: ./keycloak
+    image: ghcr.io/huseyinbabal/vibe-shop-keycloak:latest
     command: start-dev --import-realm
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
@@ -54,11 +44,10 @@ services:
       KC_HOSTNAME: http://localhost:8084
     ports:
       - "8084:8080"
-    volumes:
-      - ./keycloak:/opt/keycloak/data/import:ro
 
   api:
     build: .
+    image: ghcr.io/huseyinbabal/vibe-shop-api:latest
     depends_on:
       postgres:
         condition: service_healthy
@@ -75,6 +64,7 @@ services:
 
   web:
     build: ./frontend
+    image: ghcr.io/huseyinbabal/vibe-shop-web:latest
     depends_on:
       - api
     ports:
