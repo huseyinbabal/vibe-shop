@@ -502,7 +502,7 @@ Detaylar: [plan.md](./plan.md#dilim-6--frontend-spa--şu-anki-dilim) · Spec: [.
 Detaylar: [plan.md](./plan.md#dilim-7--ios-uygulaması-expo-rn--kayıt-apisi--şu-anki-dilim) · Spec: [../SPEC.md](../SPEC.md) §12
 
 ### Faz 1 — Kayıt API'si (backend)
-- [ ] **T47 — realm'e admin client + POST /api/register**
+- [x] **T47 — realm'e admin client + POST /api/register**
   - Yapılacak: `keycloak/vibe-shop-realm.json`'a `vibe-shop-backend` confidential client
     (`serviceAccountsEnabled: true`, secret `dev-backend-secret`, realm-management
     `manage-users` service-account rolü). `internal/auth/admin.go` — `AdminClient`:
@@ -518,11 +518,11 @@ Detaylar: [plan.md](./plan.md#dilim-7--ios-uygulaması-expo-rn--kayıt-apisi--ş
   - Dosyalar: `keycloak/vibe-shop-realm.json`, `internal/auth/admin.go`, `admin_test.go`,
     `register.go`, `register_test.go`, `internal/http/router.go`, `cmd/server/main.go`,
     `.env.example`. **Kapsam: L**
-- [ ] **CHECKPOINT Z** — Gerçek stack'le: `curl POST /api/register` → `201`; aynı email → `409`;
+- [x] **CHECKPOINT Z** — Gerçek stack'le: `curl POST /api/register` → `201`; aynı email → `409`;
   yeni kullanıcıyla ROPC login → token; kısa parola → `400`.
 
 ### Faz 2 — Mobil iskelet + kimlik
-- [ ] **T48 — mobile/ iskeleti**
+- [x] **T48 — mobile/ iskeleti**
   - Yapılacak: `npx create-expo-app mobile` (TS şablonu) + expo-router + NativeWind +
     `expo-secure-store`; `lib/api.ts` (Bearer + 401'de tek-sefer refresh-retry, `EXPO_PUBLIC_API_URL`)
     ve `lib/auth.ts` (ROPC login, register çağrısı, logout, secure-store token'ları) web'deki
@@ -531,7 +531,7 @@ Detaylar: [plan.md](./plan.md#dilim-7--ios-uygulaması-expo-rn--kayıt-apisi--ş
   - Doğrulama: simülatörde boot + `npm run lint`.
   - Dosyalar: `mobile/` (yeni ağaç). **Kapsam: M**
   - Bağımlılık: yok (T47 ile paralel yürüyebilir).
-- [ ] **T49 — login + register ekranları**
+- [x] **T49 — login + register ekranları**
   - Yapılacak: `(auth)/login.tsx` ve `register.tsx` — web login sayfasının RN karşılığı
     (zinc kart, E-posta/Parola, hata mesajları); register başarıda otomatik login → (shop);
     korumasız kullanıcı her zaman (auth)'a yönlenir; çıkış token'ları siler. Alanlara
@@ -540,11 +540,11 @@ Detaylar: [plan.md](./plan.md#dilim-7--ios-uygulaması-expo-rn--kayıt-apisi--ş
   - Doğrulama: simülatörde manuel akış (CHECKPOINT AA'da kanıt).
   - Dosyalar: `mobile/app/(auth)/*`, `lib/auth.ts`. **Kapsam: M**
   - Bağımlılık: T47, T48.
-- [ ] **CHECKPOINT AA** — Simülatörde canlı: kayıt → otomatik giriş → (shop) açılır; çıkış →
+- [x] **CHECKPOINT AA** — Simülatörde canlı: kayıt → otomatik giriş → (shop) açılır; çıkış →
   login'e döner; yanlış parola hata gösterir.
 
 ### Faz 3 — Alışveriş ekranları
-- [ ] **T50 — ürün listesi + detay**
+- [x] **T50 — ürün listesi + detay**
   - Yapılacak: `(shop)/index.tsx` — FlatList 2 kolon kart grid'i (zinc placeholder, ad,
     ₺ fiyat, Sepete Ekle); `(shop)/product/[id].tsx` — detay + adet stepper + sepete ekle +
     akordeon metinleri; sepet rozeti tab bar'da.
@@ -552,24 +552,24 @@ Detaylar: [plan.md](./plan.md#dilim-7--ios-uygulaması-expo-rn--kayıt-apisi--ş
   - Doğrulama: simülatörde manuel + testID'ler hazır.
   - Dosyalar: `mobile/app/(shop)/*`. **Kapsam: M**
   - Bağımlılık: T49.
-- [ ] **T51 — sepet + sipariş onayı**
+- [x] **T51 — sepet + sipariş onayı**
   - Yapılacak: `(shop)/cart.tsx` — kalemler (salt-okunur adet), özet kartı, Siparişi Tamamla →
     onay görünümü (sipariş no + kalemler + toplam); boş sepet durumu.
   - Kabul: toplamlar API ile aynı; sipariş sonrası sepet boş; web davranışıyla eş.
   - Doğrulama: simülatörde manuel (CHECKPOINT AB'de kanıt).
   - Dosyalar: `mobile/app/(shop)/cart.tsx`. **Kapsam: M**
   - Bağımlılık: T50.
-- [ ] **CHECKPOINT AB** — Simülatörde uçtan uca alışveriş: listele → detay → 2 adet ekle →
+- [x] **CHECKPOINT AB** — Simülatörde uçtan uca alışveriş: listele → detay → 2 adet ekle →
   sepette doğru toplam → sipariş → onay → sepet boş.
 
 ### Faz 4 — Maestro + kalite kapısı
-- [ ] **T52 — Maestro akışları + kalite**
+- [x] **T52 — Maestro akışları + kalite**
   - Yapılacak: `mobile/.maestro/register.yml` (benzersiz email ile kayıt→giriş),
     `login.yml` (yanlış parola hatası + geçerli giriş), `shop-flow.yml` (alışveriş uçtan uca).
     testID seçicileri; README'ye koşum notu.
   - Kabul: `maestro test mobile/.maestro/` üç akışta da yeşil (stack + simülatör ayakta).
   - Doğrulama: maestro koşusu + `go test ./...` + mobil lint.
-- [ ] **CHECKPOINT AC** — Maestro yeşil (kanıt çıktısı).
+- [x] **CHECKPOINT AC** — Maestro yeşil (kanıt çıktısı).
 - [ ] **CHECKPOINT AD (final)** — İnsan onayı; dilim tamam.
 
 ---
@@ -578,7 +578,7 @@ Detaylar: [plan.md](./plan.md#dilim-7--ios-uygulaması-expo-rn--kayıt-apisi--ş
 
 Detaylar: [plan.md](./plan.md#dilim-8--local-dokploy-deployu-planlandı-dilim-7-sonrası) · Spec: [../SPEC.md](../SPEC.md) §13
 
-- [ ] **T53 — Dockerfile'lar + docker-compose.dokploy.yml**
+- [x] **T53 — Dockerfile'lar + docker-compose.dokploy.yml**
   - Yapılacak: API için multi-stage `Dockerfile`; `frontend/Dockerfile` (Vite build → nginx,
     `/api` proxy); `docker-compose.dokploy.yml` — pg + keycloak (`KC_HOSTNAME`) + tek seferlik
     migration init servisi + api + web; secret'lar env ile.
@@ -587,8 +587,8 @@ Detaylar: [plan.md](./plan.md#dilim-8--local-dokploy-deployu-planlandı-dilim-7-
   - Doğrulama: compose ile uçtan uca smoke.
   - Dosyalar: `Dockerfile`, `frontend/Dockerfile`, `frontend/nginx.conf`,
     `docker-compose.dokploy.yml`. **Kapsam: M**
-- [ ] **CHECKPOINT AE** — dokploy compose dosyası düz compose ile uçtan uca çalışıyor.
-- [ ] **T54 — Dokploy kurulumu + deploy**
+- [x] **CHECKPOINT AE** — dokploy compose dosyası düz compose ile uçtan uca çalışıyor.
+- [~] **T54 — Dokploy kurulumu + deploy** (panel kuruldu — http://localhost:3500; admin hesabı + proje import'u kullanıcı adımı)
   - Yapılacak: local Dokploy kurulumu (Docker içinde; macOS'ta deneysel), compose projesi
     olarak import + deploy; panelden smoke test. Kurulamazsa fallback plan.md'de.
   - Kabul: Dokploy panelinde proje "running"; web Dokploy URL'inden uçtan uca çalışır.
