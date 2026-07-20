@@ -32,6 +32,11 @@ func main() {
 		log.Fatal("KEYCLOAK_ISSUER_URL is not set")
 	}
 
+	adminSecret := os.Getenv("KEYCLOAK_ADMIN_CLIENT_SECRET")
+	if adminSecret == "" {
+		log.Fatal("KEYCLOAK_ADMIN_CLIENT_SECRET is not set")
+	}
+
 	gormDB, err := db.Connect(dsn)
 	if err != nil {
 		log.Fatalf("connect to database: %v", err)
@@ -43,11 +48,12 @@ func main() {
 	}
 
 	products := product.NewHandler(product.NewRepository(gormDB))
+	registerH := auth.NewRegisterHandler(auth.NewAdminClient(issuerURL, "vibe-shop-backend", adminSecret))
 	cartH := cart.NewHandler(cart.NewRepository(gormDB))
 	ordersH := order.NewHandler(order.NewRepository(gormDB))
 
 	log.Printf("vibe-shop listening on %s", addr)
-	router := apphttp.NewRouter(products, cartH, ordersH, verifier.RequireAuth)
+	router := apphttp.NewRouter(products, registerH, cartH, ordersH, verifier.RequireAuth)
 	if err := http.ListenAndServe(addr, router); err != nil {
 		log.Fatalf("server error: %v", err)
 	}

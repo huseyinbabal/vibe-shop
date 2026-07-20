@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"vibe-shop/internal/auth"
 	"vibe-shop/internal/auth/authtest"
 	"vibe-shop/internal/cart"
 	"vibe-shop/internal/order"
@@ -66,9 +67,12 @@ func (fakeProductRepository) Delete(ctx context.Context, id uint) error {
 func newTestRouter(t *testing.T) (http.Handler, func(sub string) string) {
 	verifier, mint := authtest.New(t)
 	products := product.NewHandler(fakeProductRepository{})
+	// The register handler's admin client points at an unreachable Keycloak;
+	// routing tests only need the route to exist, not a successful signup.
+	registerH := auth.NewRegisterHandler(auth.NewAdminClient("http://127.0.0.1:1/realms/vibe-shop", "vibe-shop-backend", "s"))
 	cartH := cart.NewHandler(fakeCartRepository{})
 	ordersH := order.NewHandler(fakeOrderRepository{})
-	return NewRouter(products, cartH, ordersH, verifier.RequireAuth), mint
+	return NewRouter(products, registerH, cartH, ordersH, verifier.RequireAuth), mint
 }
 
 func TestNewRouter_Health(t *testing.T) {
@@ -93,22 +97,32 @@ func TestNewRouter_Health(t *testing.T) {
 	}
 }
 
-// TestNewRouter_RegisterLoginRemoved proves slice 5 removed the local auth
-// endpoints: user management now lives in Keycloak.
-func TestNewRouter_RegisterLoginRemoved(t *testing.T) {
+// TestNewRouter_AuthRoutes proves slice 7 re-added register (backed by
+// Keycloak Admin API) while login stays removed — sign-in happens directly
+// against Keycloak.
+func TestNewRouter_AuthRoutes(t *testing.T) {
 	router, _ := newTestRouter(t)
 	srv := httptest.NewServer(router)
 	defer srv.Close()
 
-	for _, path := range []string{"/api/register", "/api/login"} {
-		res, err := srv.Client().Post(srv.URL+path, "application/json", strings.NewReader(`{}`))
-		if err != nil {
-			t.Fatalf("POST %s: %v", path, err)
-		}
-		res.Body.Close()
-		if res.StatusCode != http.StatusNotFound {
-			t.Errorf("POST %s status = %d, want 404", path, res.StatusCode)
-		}
+	// /api/register is routed: an empty body reaches validation → 400
+	// (a mux-level miss would give 404).
+	res, err := srv.Client().Post(srv.URL+"/api/register", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatalf("POST /api/register: %v", err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Errorf("POST /api/register status = %d, want 400 (routed)", res.StatusCode)
+	}
+
+	res, err = srv.Client().Post(srv.URL+"/api/login", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatalf("POST /api/login: %v", err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusNotFound {
+		t.Errorf("POST /api/login status = %d, want 404", res.StatusCode)
 	}
 }
 

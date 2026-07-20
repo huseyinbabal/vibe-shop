@@ -4,6 +4,7 @@ package http
 import (
 	"net/http"
 
+	"vibe-shop/internal/auth"
 	"vibe-shop/internal/cart"
 	"vibe-shop/internal/health"
 	"vibe-shop/internal/order"
@@ -14,12 +15,14 @@ import (
 type Middleware func(http.HandlerFunc) http.HandlerFunc
 
 // NewRouter builds the application's HTTP handler with all routes registered.
-// Health and product reads are public; product writes, cart and order routes
-// are wrapped with requireAuth so only requests carrying a valid Keycloak
-// token reach them.
-func NewRouter(products *product.Handler, cartH *cart.Handler, ordersH *order.Handler, requireAuth Middleware) http.Handler {
+// Health, product reads and register are public; product writes, cart and
+// order routes are wrapped with requireAuth so only requests carrying a valid
+// Keycloak token reach them.
+func NewRouter(products *product.Handler, registerH *auth.RegisterHandler, cartH *cart.Handler, ordersH *order.Handler, requireAuth Middleware) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", health.Handler)
+
+	mux.HandleFunc("POST /api/register", registerH.Register)
 
 	mux.HandleFunc("GET /api/products", products.List)
 	mux.HandleFunc("GET /api/products/{id}", products.GetByID)

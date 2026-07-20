@@ -4,6 +4,19 @@
   "sslRequired": "none",
   "clients": [
     {
+      "clientId": "vibe-shop-backend",
+      "name": "vibe-shop backend (service account)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "dev-backend-secret",
+      "redirectUris": []
+    },
+    {
       "clientId": "vibe-shop-api",
       "name": "vibe-shop API",
       "enabled": true,
@@ -16,6 +29,14 @@
     }
   ],
   "users": [
+    {
+      "username": "service-account-vibe-shop-backend",
+      "enabled": true,
+      "serviceAccountClientId": "vibe-shop-backend",
+      "clientRoles": {
+        "realm-management": ["manage-users"]
+      }
+    },
     {
       "username": "testuser",
       "enabled": true,
