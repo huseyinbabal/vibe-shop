@@ -24,11 +24,14 @@ type KeycloakVerifier struct {
 	keys   keyfunc.Keyfunc
 }
 
-// NewKeycloakVerifier fetches the realm's JWKS (derived from issuerURL the
-// way Keycloak lays it out) and returns a verifier bound to that issuer.
-// Fetching eagerly means the server fails fast at boot when Keycloak is down.
-func NewKeycloakVerifier(issuerURL string) (*KeycloakVerifier, error) {
-	jwksURL := issuerURL + "/protocol/openid-connect/certs"
+// NewKeycloakVerifier fetches the realm's JWKS and returns a verifier bound
+// to issuerURL — the issuer exactly as it appears in tokens. internalURL is
+// where this process can actually reach the realm (inside a compose network
+// that differs from the public issuer); pass the issuer itself when they are
+// the same. Fetching eagerly means the server fails fast at boot when
+// Keycloak is down.
+func NewKeycloakVerifier(issuerURL, internalURL string) (*KeycloakVerifier, error) {
+	jwksURL := internalURL + "/protocol/openid-connect/certs"
 	// The library's default tolerates a failed first fetch; we want the
 	// opposite so a missing/broken Keycloak stops the server at boot.
 	failOnFirstError := false

@@ -1,0 +1,84 @@
+# Production-benzeri prova (SPEC §13): PG + Keycloak + API + web tek projede.
+# Dev compose'dan bağımsızdır ve farklı portlar kullanır (yan yana koşabilir):
+#   web http://localhost:3000 · keycloak http://localhost:8082
+# Secrets are dev-only defaults; override them via environment when deploying.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: vibeshop
+      POSTGRES_PASSWORD: vibeshop
+      POSTGRES_DB: vibeshop
+    volumes:
+      - vibeshop-dokploy-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vibeshop -d vibeshop"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot: applies migrations in filename order exactly once each, tracked
+  # in a schema_migrations table so re-deploys stay idempotent.
+  migrate:
+    image: postgres:16-alpine
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: vibeshop
+    volumes:
+      - ./migrations:/migrations:ro
+    entrypoint: /bin/sh
+    command:
+      - -ec
+      - |
+        psql -h postgres -U vibeshop -d vibeshop -c "CREATE TABLE IF NOT EXISTS schema_migrations (filename TEXT PRIMARY KEY)"
+        for f in /migrations/*.sql; do
+          name=$$(basename "$$f")
+          if [ "$$(psql -h postgres -U vibeshop -d vibeshop -tAc "SELECT 1 FROM schema_migrations WHERE filename='$$name'")" = "1" ]; then
+            echo "skip $$name"; continue
+          fi
+          echo "apply $$name"
+          psql -h postgres -U vibeshop -d vibeshop -v ON_ERROR_STOP=1 -f "$$f"
+          psql -h postgres -U vibeshop -d vibeshop -c "INSERT INTO schema_migrations (filename) VALUES ('$$name')"
+        done
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.3
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      # Issuer must match what browsers/mobile use from the host.
+      KC_HOSTNAME: http://localhost:8082
+    ports:
+      - "8082:8080"
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+
+  api:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://vibeshop:vibeshop@postgres:5432/vibeshop?sslmode=disable
+      # Issuer as it appears in tokens (host-visible) vs. where this container
+      # can actually reach Keycloak (compose-internal).
+      KEYCLOAK_ISSUER_URL: http://localhost:8082/realms/vibe-shop
+      KEYCLOAK_INTERNAL_URL: http://keycloak:8080/realms/vibe-shop
+      KEYCLOAK_ADMIN_CLIENT_SECRET: dev-backend-secret
+    restart: unless-stopped
+
+  web:
+    build: ./frontend
+    depends_on:
+      - api
+    ports:
+      - "3000:80"
+
+volumes:
+  vibeshop-dokploy-pg:
