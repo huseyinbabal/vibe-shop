@@ -1,0 +1,29 @@
+# Yanlış parola hata gösterir; geçerli kimlik girişe götürür.
+appId: com.vibeshop.app
+---
+- launchApp:
+    clearState: true
+- assertVisible:
+    id: "login-email"
+- tapOn:
+    id: "login-email"
+- inputText: "testuser@vibe.shop"
+- tapOn:
+    id: "login-password"
+- inputText: "yanlis-parola"
+- tapOn:
+    id: "login-submit"
+- extendedWaitUntil:
+    visible:
+      id: "login-error"
+    timeout: 10000
+- assertVisible: "E-posta veya parola hatalı"
+- tapOn:
+    id: "login-password"
+- eraseText
+- inputText: "test1234"
+- tapOn:
+    id: "login-submit"
+- extendedWaitUntil:
+    visible: "Ürünler"
+    timeout: 15000

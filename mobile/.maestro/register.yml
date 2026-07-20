@@ -1,0 +1,24 @@
+# Kayıt → otomatik giriş → ürünler ekranı. Her koşuda benzersiz email üretir,
+# bu yüzden tekrar tekrar koşulabilir.
+appId: com.vibeshop.app
+---
+- launchApp:
+    clearState: true
+- assertVisible:
+    id: "login-email"
+- tapOn:
+    id: "go-register"
+- assertVisible:
+    id: "register-email"
+- evalScript: ${output.email = 'maestro-' + Date.now() + '@vibe.shop'}
+- tapOn:
+    id: "register-email"
+- inputText: ${output.email}
+- tapOn:
+    id: "register-password"
+- inputText: "parola123"
+- tapOn:
+    id: "register-submit"
+- extendedWaitUntil:
+    visible: "Ürünler"
+    timeout: 15000

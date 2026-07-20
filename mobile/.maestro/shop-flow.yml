@@ -1,0 +1,60 @@
+# Uçtan uca alışveriş: giriş → ürün detayı → 2 adet sepete ekle → sepet →
+# sipariş → onay → sepet boş. Kayıt akışıyla üretilmiş taze bir kullanıcı
+# yerine kalıcı testuser2 kullanılır; sipariş sonunda sepet boşaldığı için
+# akış tekrar koşulabilir.
+appId: com.vibeshop.app
+---
+- launchApp:
+    clearState: true
+- assertVisible:
+    id: "login-email"
+- tapOn:
+    id: "login-email"
+- inputText: "testuser2@vibe.shop"
+- tapOn:
+    id: "login-password"
+- inputText: "test1234"
+- tapOn:
+    id: "login-submit"
+- extendedWaitUntil:
+    visible: "Ürünler"
+    timeout: 15000
+- tapOn:
+    id: "product-1"
+- extendedWaitUntil:
+    visible:
+      id: "detail-name"
+    timeout: 10000
+- tapOn:
+    id: "qty-inc"
+- assertVisible: "2"
+- tapOn:
+    id: "detail-add"
+- extendedWaitUntil:
+    visible:
+      id: "detail-feedback"
+    timeout: 10000
+- tapOn:
+    id: "nav-cart"
+- extendedWaitUntil:
+    visible:
+      id: "cart-total"
+    timeout: 10000
+- tapOn:
+    id: "place-order"
+- extendedWaitUntil:
+    visible:
+      id: "order-confirmed"
+    timeout: 15000
+- assertVisible: "Siparişin Alındı"
+- tapOn:
+    id: "continue-shopping"
+- extendedWaitUntil:
+    visible: "Ürünler"
+    timeout: 10000
+- tapOn:
+    id: "nav-cart"
+- extendedWaitUntil:
+    visible:
+      id: "cart-empty"
+    timeout: 10000
