@@ -26,7 +26,12 @@
    bir Keycloak token'ı ile çalışır; `GET /api/products*` herkese açık kalır) ✅ tamamlandı, bkz. §10.
 6. **Frontend (SPA)** — ürün listesi, ürün detay, sepet ve Keycloak girişli login sayfaları;
    giriş yapmamış herkes login'e yönlendirilir; veri Go API'den (:8080); `design/` mockup'larına
-   sadık, shadcn/ui ile ← *şu anki dilim*, bkz. §11.
+   sadık, shadcn/ui ile ✅ tamamlandı, bkz. §11.
+7. **iOS uygulaması (Expo React Native)** — mevcut backend'le giriş + **yeni `/api/register`**
+   (Keycloak Admin API üzerinden) ile kayıt; web frontend'e yakın görünüm; Maestro ile E2E
+   ← *şu anki dilim*, bkz. §12.
+8. **Local Dokploy deploy'u** — mevcut compose stack'i (PG + Keycloak + API + web) Dockerfile'lar
+   ve Dokploy compose projesi olarak local Dokploy'a kurulur, bkz. §13.
 
 ## 2. Komutlar (Commands)
 
@@ -817,3 +822,144 @@ vibe-shop/
 - API'nin davranışına SPA tarafında güvenmemek gerekeni: istemci doğrulaması API doğrulamasının
   yerine geçmez (400'ler yine de düzgün gösterilir).
 - Backend Go kodunda bu dilim kapsamında değişiklik yapma.
+
+---
+
+## 12. Dilim 7 — iOS Uygulaması (Expo React Native) + Kayıt API'si
+
+### 12.1 Amaç
+
+vibe-shop'a, web SPA ile aynı backend'i kullanan bir **iOS uygulaması** eklenir (Expo React
+Native). Kullanıcı mobilde **kayıt olur ve giriş yapar**; ürünleri gezer, sepete ekler,
+sipariş verir. Görünüm, web frontend'in zinc/shadcn dilinin RN karşılığıdır.
+
+**Yeni backend ucu — `POST /api/register` (kullanıcı kararı, 2026-07-20):** Dilim 5'te local
+kayıt kaldırılmıştı; mobil native kayıt formu istediği için backend'e, **Keycloak Admin API**'sini
+çağırarak realm'de kullanıcı oluşturan bir uç eklenir:
+
+| Metot & Yol | Koruma | Başarı | Gövde (istek → yanıt) |
+|---|---|---|---|
+| `POST /api/register` | public | `201` | `{"email","password"}` → `{"id","email"}` (parola dönmez) |
+
+- Doğrulama: email boş değil/`@` içerir; parola ≥ 8 karakter (aksi `400`). Var olan email → `409`.
+- Backend, realm'e eklenen **confidential service client** (`vibe-shop-backend`,
+  `serviceAccountsEnabled: true`, realm-management `manage-users` rolü, dev-only secret) ile
+  `client_credentials` token'ı alır ve `POST /admin/realms/vibe-shop/users` çağırır
+  (email doğrulanmış + kalıcı parola ile). Secret `KEYCLOAK_ADMIN_CLIENT_SECRET` env'inden okunur.
+- Kayıt sonrası mobil, mevcut ROPC akışıyla otomatik giriş yapar (web'dekiyle aynı token yolu).
+
+**Mobil sayfalar (web SPA ile birebir kapsam + kayıt):** login, register, ürün listesi,
+ürün detay, sepet + sipariş onayı. Tüm ekranlar (login/register hariç) giriş korumalı;
+`user_id` izolasyonu, fiyat snapshot'ı vb. davranışlar backend'den aynen gelir.
+
+**Başarı ölçütü:** iOS simülatöründe `npx expo run:ios` (veya Expo Go) ile uygulama açılır;
+kayıt → otomatik giriş → ürünler listelenir → detaydan sepete ekle → sepette doğru toplam →
+sipariş → onay ekranı + sepet boşalır; çıkış sonrası korumalı ekranlar login'e döner;
+`maestro test mobile/.maestro/` tüm akışlarda yeşil; backend `go test ./...` yeşil kalır.
+
+### 12.2 Komutlar (ek)
+
+| Komut | Amaç |
+|-------|------|
+| `cd mobile && npm install` | Mobil bağımlılıkları kurar |
+| `cd mobile && npx expo start` | Metro bundler (Expo Go ile) |
+| `cd mobile && npx expo run:ios` | iOS simülatöründe native build ile çalıştırır |
+| `cd mobile && npm run lint` | ESLint |
+| `cd mobile && npm run test` | Jest birim testleri (varsa) |
+| `maestro test mobile/.maestro/` | Maestro E2E akışları (simülatör + stack ayakta olmalı) |
+| `curl -s -X POST localhost:8090/api/register -d '{"email":"yeni@vibe.shop","password":"parola123"}'` | Kayıt → `201` |
+
+### 12.3 Proje Yapısı (ek)
+
+```
+vibe-shop/
+  keycloak/vibe-shop-realm.json   # + vibe-shop-backend service client (manage-users)
+  internal/auth/
+    admin.go                      # Keycloak Admin API istemcisi: CreateUser (client_credentials)
+    admin_test.go                 # httptest ile admin API mock'u (token + users uçları)
+    register.go                   # POST /api/register handler'ı + doğrulama
+    register_test.go
+  internal/http/router.go         # public POST /api/register rotası
+  cmd/server/main.go              # KEYCLOAK_ADMIN_CLIENT_SECRET okunur
+  mobile/                         # Expo uygulaması (Go modülünden ve frontend/'den ayrı)
+    app/                          # expo-router ekranları
+      (auth)/login.tsx  register.tsx
+      (shop)/index.tsx  product/[id].tsx  cart.tsx
+    lib/api.ts                    # fetch sarmalayıcı (Bearer + 401'de refresh-retry)
+    lib/auth.ts                   # ROPC login/register/logout; token'lar expo-secure-store'da
+    .maestro/                     # Maestro E2E akışları (login.yml, register.yml, shop-flow.yml)
+```
+
+### 12.4 Kod Stili (ek)
+
+- **Stack:** Expo (managed) + TypeScript strict + **expo-router** + **NativeWind** (Tailwind
+  sözdizimi — web'in zinc paletiyle aynı görsel dil). Durum için ek kütüphane yok.
+- **Token saklama:** `expo-secure-store` (mobilde localStorage yerine güvenli karşılık).
+  API/Keycloak adresleri `EXPO_PUBLIC_API_URL` / `EXPO_PUBLIC_KEYCLOAK_URL` env'lerinden.
+- **Veri erişimi:** tüm istekler `lib/api.ts` üzerinden; kimlik yalnızca `lib/auth.ts`'te
+  (web'deki desenin RN uyarlaması). Fiyat biçimi `Intl.NumberFormat('tr-TR')`.
+- **Backend tarafı:** yeni kod yalnızca `internal/auth` + router/main kablolaması; mevcut
+  `httpx` yardımcıları ve hata gövdesi formatı korunur. Admin token'ı memory'de cache'lenir,
+  süresi dolunca yenilenir; Keycloak'a erişilemezse `503 {"error":"registration unavailable"}`.
+
+### 12.5 Test Stratejisi (ek)
+
+- **Backend:** `admin_test.go`/`register_test.go` — Keycloak admin API'si `httptest` ile taklit
+  edilir (token ucu + users ucu; 201/409/hata yolları). Gerçek Keycloak'a karşı kayıt,
+  checkpoint'te curl ile kanıtlanır (dilim 5 deseni).
+- **Mobil E2E — Maestro:** `.maestro/` altında en az üç akış: (1) kayıt → otomatik giriş,
+  (2) yanlış parola → hata mesajı + geçerli giriş, (3) alışveriş — ürün listesi → detay →
+  sepete ekle → sepet toplamı → sipariş → onay → sepet boş. Akışlar gerçek local stack'e karşı
+  koşar (mock yok); her koşuda benzersiz email üretilir (`register` akışı tekrar koşulabilir).
+- **Geçiş ölçütü:** `go test ./...` yeşil · mobil lint temiz · `maestro test mobile/.maestro/`
+  yeşil (simülatör + `make start` ayakta).
+
+### 12.6 Sınırlar (ek/değişiklik)
+
+**Her zaman yap (ek):**
+- Parolayı yalnızca Keycloak'a gönder (ROPC/token ve admin create-user); asla loglama/saklama.
+- Admin client secret'ını env'den oku; register hatalarında Keycloak iç detayını sızdırma.
+- Kimliği yalnızca `lib/auth.ts` + secure-store yönetsin; token'ları AsyncStorage'a koyma.
+- Mobil görünümde web'in zinc dilini ve Türkçe metinlerini koru.
+
+**Önce sor (ek):**
+- Yeni npm/Expo bağımlılığı (iskelet + NativeWind + secure-store dışında) eklemeden önce.
+- Register'a email doğrulama/parola politikası/rate-limit eklemeden önce.
+- Android desteği, push notification, offline cache eklemeden önce.
+- Realm'deki admin client'ın rollerini genişletmeden önce.
+
+**Asla yapma (ek):**
+- Admin client secret'ıyla mobil uygulamadan doğrudan Keycloak Admin API'si çağırma
+  (secret yalnızca backend'de yaşar).
+- Maestro akışlarını mock server'a karşı "yeşil" gösterme.
+- Web frontend'in davranışını bu dilimde değiştirme.
+
+---
+
+## 13. Dilim 8 — Local Dokploy Deploy'u
+
+### 13.1 Amaç
+
+Local'de docker compose ile koşan stack (Postgres + Keycloak + API + web), **Dokploy**
+üzerinde tek bir compose projesi olarak deploy edilir — amaç production-benzeri bir kurulum
+provası. Dokploy local'de Docker içinde kurulur (resmi hedef Linux'tur; macOS/Docker
+Desktop'ta deneysel çalışır — bilinen risk).
+
+- **Yeni dosyalar:** `Dockerfile` (Go API, multi-stage, distroless/alpine), `frontend/Dockerfile`
+  (Vite build → nginx; nginx `/api`'yi API servisine proxy'ler — CORS'suz mimari korunur),
+  `docker-compose.dokploy.yml` (pg + keycloak + migrasyonları uygulayan tek seferlik init +
+  api + web).
+- **Keycloak issuer tutarlılığı:** Keycloak `KC_HOSTNAME` ile dışarıdan görünen adresine
+  sabitlenir; API'nin `KEYCLOAK_ISSUER_URL`'i ve istemcilerin kullandığı URL birebir aynı
+  olur (token `iss` eşleşmesi bozulmaz).
+- **Başarı ölçütü:** Dokploy panelinde proje "running"; web arayüzü Dokploy URL'inden açılır,
+  kayıt/giriş/alışveriş akışı bu kurulumda uçtan uca çalışır; `docker compose` local dev akışı
+  (make start) değişmeden kalır.
+
+### 13.2 Sınırlar (ek)
+
+**Her zaman yap:** imajlarda secret gömme (env ile geç); migration'ları idempotent uygula
+(`IF NOT EXISTS` değil — sıra numarasıyla bir kez koşan init job).
+**Önce sor:** TLS/gerçek domain, imaj registry'ye push, Dokploy'da otomatik deploy (git webhook).
+**Asla yapma:** dev compose'unu bozma; realm'deki dev credential'ları production'a taşıma
+(bu kurulum da local/dev provasıdır).

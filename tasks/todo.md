@@ -402,7 +402,7 @@ Detaylar: [plan.md](./plan.md#dilim-5--keycloaka-geçiş-tek-kimlik-sağlayıcı
 
 ---
 
-## Dilim 6 — Frontend (SPA) ← *şu anki dilim*
+## Dilim 6 — Frontend (SPA) ✅ tamamlandı
 
 Detaylar: [plan.md](./plan.md#dilim-6--frontend-spa--şu-anki-dilim) · Spec: [../SPEC.md](../SPEC.md) §11
 
@@ -494,3 +494,103 @@ Detaylar: [plan.md](./plan.md#dilim-6--frontend-spa--şu-anki-dilim) · Spec: [.
   - Doğrulama: `npm run build` + `npm run lint` + `npm run test` temiz · `go test ./...`
     etkilenmedi · görsel karşılaştırma tamam.
 - [ ] **CHECKPOINT Y (final)** — İnsan onayı; dilim tamam.
+
+---
+
+## Dilim 7 — iOS Uygulaması (Expo RN) + Kayıt API'si ← *şu anki dilim*
+
+Detaylar: [plan.md](./plan.md#dilim-7--ios-uygulaması-expo-rn--kayıt-apisi--şu-anki-dilim) · Spec: [../SPEC.md](../SPEC.md) §12
+
+### Faz 1 — Kayıt API'si (backend)
+- [ ] **T47 — realm'e admin client + POST /api/register**
+  - Yapılacak: `keycloak/vibe-shop-realm.json`'a `vibe-shop-backend` confidential client
+    (`serviceAccountsEnabled: true`, secret `dev-backend-secret`, realm-management
+    `manage-users` service-account rolü). `internal/auth/admin.go` — `AdminClient`:
+    `client_credentials` token'ı alır + cache'ler, `CreateUser(ctx, email, password)`
+    (`emailVerified: true`, kalıcı parola); Keycloak 409 → `ErrEmailTaken`, erişilemez → hata.
+    `internal/auth/register.go` — `registerInput` doğrulaması (email `@`, parola ≥ 8 → `400`),
+    başarı `201 {"id","email"}`, duplicate `409 {"error":"email already registered"}`,
+    Keycloak down → `503`. Router'a public `POST /api/register`; `main.go`
+    `KEYCLOAK_ADMIN_CLIENT_SECRET` okur (boşsa fatal); `.env`/`.env.example` güncellenir.
+  - Kabul: SPEC §12.1 tablosuyla birebir; parola hiçbir log/yanıtta yok; secret env'den.
+  - Doğrulama: `admin_test.go` + `register_test.go` (httptest ile token/users mock'u:
+    201, 409, doğrulama 400'leri, Keycloak down 503) yeşil · `go build ./...`.
+  - Dosyalar: `keycloak/vibe-shop-realm.json`, `internal/auth/admin.go`, `admin_test.go`,
+    `register.go`, `register_test.go`, `internal/http/router.go`, `cmd/server/main.go`,
+    `.env.example`. **Kapsam: L**
+- [ ] **CHECKPOINT Z** — Gerçek stack'le: `curl POST /api/register` → `201`; aynı email → `409`;
+  yeni kullanıcıyla ROPC login → token; kısa parola → `400`.
+
+### Faz 2 — Mobil iskelet + kimlik
+- [ ] **T48 — mobile/ iskeleti**
+  - Yapılacak: `npx create-expo-app mobile` (TS şablonu) + expo-router + NativeWind +
+    `expo-secure-store`; `lib/api.ts` (Bearer + 401'de tek-sefer refresh-retry, `EXPO_PUBLIC_API_URL`)
+    ve `lib/auth.ts` (ROPC login, register çağrısı, logout, secure-store token'ları) web'deki
+    desenden uyarlanır; boş ekran iskeleti (auth)/(shop) gruplarıyla.
+  - Kabul: `npx expo run:ios` simülatörde açılır; lint temiz.
+  - Doğrulama: simülatörde boot + `npm run lint`.
+  - Dosyalar: `mobile/` (yeni ağaç). **Kapsam: M**
+  - Bağımlılık: yok (T47 ile paralel yürüyebilir).
+- [ ] **T49 — login + register ekranları**
+  - Yapılacak: `(auth)/login.tsx` ve `register.tsx` — web login sayfasının RN karşılığı
+    (zinc kart, E-posta/Parola, hata mesajları); register başarıda otomatik login → (shop);
+    korumasız kullanıcı her zaman (auth)'a yönlenir; çıkış token'ları siler. Alanlara
+    `testID` verilir (Maestro için).
+  - Kabul: kayıt→otomatik giriş, yanlış parola hatası, guard yönlendirmesi simülatörde çalışır.
+  - Doğrulama: simülatörde manuel akış (CHECKPOINT AA'da kanıt).
+  - Dosyalar: `mobile/app/(auth)/*`, `lib/auth.ts`. **Kapsam: M**
+  - Bağımlılık: T47, T48.
+- [ ] **CHECKPOINT AA** — Simülatörde canlı: kayıt → otomatik giriş → (shop) açılır; çıkış →
+  login'e döner; yanlış parola hata gösterir.
+
+### Faz 3 — Alışveriş ekranları
+- [ ] **T50 — ürün listesi + detay**
+  - Yapılacak: `(shop)/index.tsx` — FlatList 2 kolon kart grid'i (zinc placeholder, ad,
+    ₺ fiyat, Sepete Ekle); `(shop)/product/[id].tsx` — detay + adet stepper + sepete ekle +
+    akordeon metinleri; sepet rozeti tab bar'da.
+  - Kabul: gerçek API verisi; sepete ekleme çalışır; 404 durumu düzgün.
+  - Doğrulama: simülatörde manuel + testID'ler hazır.
+  - Dosyalar: `mobile/app/(shop)/*`. **Kapsam: M**
+  - Bağımlılık: T49.
+- [ ] **T51 — sepet + sipariş onayı**
+  - Yapılacak: `(shop)/cart.tsx` — kalemler (salt-okunur adet), özet kartı, Siparişi Tamamla →
+    onay görünümü (sipariş no + kalemler + toplam); boş sepet durumu.
+  - Kabul: toplamlar API ile aynı; sipariş sonrası sepet boş; web davranışıyla eş.
+  - Doğrulama: simülatörde manuel (CHECKPOINT AB'de kanıt).
+  - Dosyalar: `mobile/app/(shop)/cart.tsx`. **Kapsam: M**
+  - Bağımlılık: T50.
+- [ ] **CHECKPOINT AB** — Simülatörde uçtan uca alışveriş: listele → detay → 2 adet ekle →
+  sepette doğru toplam → sipariş → onay → sepet boş.
+
+### Faz 4 — Maestro + kalite kapısı
+- [ ] **T52 — Maestro akışları + kalite**
+  - Yapılacak: `mobile/.maestro/register.yml` (benzersiz email ile kayıt→giriş),
+    `login.yml` (yanlış parola hatası + geçerli giriş), `shop-flow.yml` (alışveriş uçtan uca).
+    testID seçicileri; README'ye koşum notu.
+  - Kabul: `maestro test mobile/.maestro/` üç akışta da yeşil (stack + simülatör ayakta).
+  - Doğrulama: maestro koşusu + `go test ./...` + mobil lint.
+- [ ] **CHECKPOINT AC** — Maestro yeşil (kanıt çıktısı).
+- [ ] **CHECKPOINT AD (final)** — İnsan onayı; dilim tamam.
+
+---
+
+## Dilim 8 — Local Dokploy Deploy'u (Dilim 7 sonrası)
+
+Detaylar: [plan.md](./plan.md#dilim-8--local-dokploy-deployu-planlandı-dilim-7-sonrası) · Spec: [../SPEC.md](../SPEC.md) §13
+
+- [ ] **T53 — Dockerfile'lar + docker-compose.dokploy.yml**
+  - Yapılacak: API için multi-stage `Dockerfile`; `frontend/Dockerfile` (Vite build → nginx,
+    `/api` proxy); `docker-compose.dokploy.yml` — pg + keycloak (`KC_HOSTNAME`) + tek seferlik
+    migration init servisi + api + web; secret'lar env ile.
+  - Kabul: `docker compose -f docker-compose.dokploy.yml up` ile stack ayağa kalkar; web'den
+    kayıt/giriş/alışveriş çalışır; dev compose etkilenmez.
+  - Doğrulama: compose ile uçtan uca smoke.
+  - Dosyalar: `Dockerfile`, `frontend/Dockerfile`, `frontend/nginx.conf`,
+    `docker-compose.dokploy.yml`. **Kapsam: M**
+- [ ] **CHECKPOINT AE** — dokploy compose dosyası düz compose ile uçtan uca çalışıyor.
+- [ ] **T54 — Dokploy kurulumu + deploy**
+  - Yapılacak: local Dokploy kurulumu (Docker içinde; macOS'ta deneysel), compose projesi
+    olarak import + deploy; panelden smoke test. Kurulamazsa fallback plan.md'de.
+  - Kabul: Dokploy panelinde proje "running"; web Dokploy URL'inden uçtan uca çalışır.
+  - Doğrulama: panel + curl/tarayıcı smoke.
+- [ ] **CHECKPOINT AF (final)** — İnsan onayı; dilim tamam.

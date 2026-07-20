@@ -534,7 +534,7 @@ Detaylı görev listesi: [todo.md](./todo.md).
 
 ---
 
-## Dilim 6 — Frontend (SPA) ← *şu anki dilim*
+## Dilim 6 — Frontend (SPA) ✅ tamamlandı
 
 > Kaynak: [SPEC.md §11](../SPEC.md). Kapsam: **Vite + React + TS + shadcn/ui ile 4 sayfa
 > (login, ürün listesi, ürün detay, sepet+onay); tüm rotalar giriş korumalı; giriş Keycloak
@@ -621,5 +621,80 @@ Go tarafında hiçbir dosya değişmez.
 - Sepette adet azaltma/satır silme (backend ucu yok).
 - Auth Code + PKCE, keycloakify teması, httpOnly cookie/BFF.
 - Go API'de değişiklik (CORS dahil), Makefile frontend hedefleri.
+
+Detaylı görev listesi: [todo.md](./todo.md).
+
+---
+
+## Dilim 7 — iOS Uygulaması (Expo RN) + Kayıt API'si ← *şu anki dilim*
+
+> Kaynak: [SPEC.md §12](../SPEC.md). Kapsam: **backend'e Keycloak Admin API'li `POST /api/register`;
+> Expo RN iOS uygulaması (login/register/ürünler/detay/sepet+onay, NativeWind ile zinc görünüm);
+> Maestro E2E**. Android, push, offline, web değişikliği YOK.
+
+### Mimari Kararlar
+
+- **Kayıt backend üzerinden (kullanıcı kararı):** mobil, admin secret taşıyamaz; register ucu
+  Go API'de yaşar. Realm'e `vibe-shop-backend` confidential service client'ı eklenir
+  (`serviceAccountsEnabled`, realm-management `manage-users`, dev-only secret). `admin.go`
+  `client_credentials` token'ını cache'ler; `POST /admin/realms/vibe-shop/users` ile kullanıcı
+  yaratır (emailVerified + kalıcı parola). 409 eşlemesi Keycloak'ın 409'undan gelir.
+- **Expo managed + expo-router + NativeWind:** web'le aynı zihinsel model (dosya tabanlı rota,
+  Tailwind sınıfları) → görsel dil birebir taşınır. Token'lar `expo-secure-store`'da;
+  `lib/api.ts` 401'de tek-sefer refresh-retry (web deseninin kopyası).
+- **Simülatörden erişim:** iOS simülatörü host'un localhost'unu görür; `EXPO_PUBLIC_API_URL`
+  (`http://localhost:8090`) ve `EXPO_PUBLIC_KEYCLOAK_URL` (`http://localhost:8081`) env'leriyle.
+  ROPC CORS'u mobilde dert değildir (fetch native katmandan gider) — webOrigins değişmez.
+- **Maestro gerçek stack'e karşı:** akışlar `make start` + simülatörle koşar; register akışı
+  timestamp'li benzersiz email üretir. Mock yok (SPEC §12.6).
+
+### Bağımlılık Grafiği
+
+```
+realm: vibe-shop-backend client (T47a) ─┐
+internal/auth: admin.go + register.go (T47) ──→ CHECKPOINT Z (curl register→login)
+        │
+mobile/ iskeleti: Expo + router + NativeWind + lib/api + lib/auth (T48)
+        ▼
+login + register ekranları (T49) ──→ CHECKPOINT AA (simülatörde kayıt+giriş canlı)
+        ▼
+ürün listesi + detay (T50) → sepet + onay (T51) ──→ CHECKPOINT AB (alışveriş akışı canlı)
+        ▼
+Maestro akışları + kalite kapısı (T52) ──→ CHECKPOINT AC (maestro yeşil) → CHECKPOINT AD (insan onayı)
+```
+
+### Riskler
+
+| Risk | Etki | Önlem |
+|------|------|-------|
+| Admin token'ın yanlış yönetimi (süre/rol) | Yüksek | client_credentials + sadece manage-users; token cache + expiry yenileme; httptest'le hata yolları |
+| Simülatör localhost erişimi (fiziksel cihazda kırılır) | Orta | Env ile adres; fiziksel cihaz kapsam dışı (önce sor) |
+| Maestro flakiness (animasyon/timing) | Orta | testID tabanlı seçiciler + assertVisible bekleme; akış başına benzersiz veri |
+| NativeWind/Expo sürüm uyumu | Düşük | Resmi şablon + lock dosyası |
+
+### Kapsam Dışı
+- Android, push, offline, fiziksel cihaz, Auth Code+PKCE.
+- Web frontend değişikliği; register'a rate-limit/email doğrulama.
+
+Detaylı görev listesi: [todo.md](./todo.md).
+
+---
+
+## Dilim 8 — Local Dokploy Deploy'u (planlandı, Dilim 7 sonrası)
+
+> Kaynak: [SPEC.md §13](../SPEC.md). Kapsam: **API + web Dockerfile'ları,
+> docker-compose.dokploy.yml (pg + keycloak + migration init + api + web), local Dokploy
+> kurulumu ve tek proje olarak deploy**.
+
+### Mimari Kararlar (özet)
+- API: multi-stage Go build (statik binary, alpine). Web: Vite build → nginx; nginx `/api`'yi
+  api servisine proxy'ler (CORS'suz mimari prod'da da korunur).
+- Keycloak `KC_HOSTNAME` dış adrese sabitlenir; API'nin `KEYCLOAK_ISSUER_URL`'i aynı adres →
+  `iss` eşleşmesi bozulmaz. Migration'lar tek seferlik init container'da sırayla koşar.
+- Dokploy macOS'ta deneyseldir; kurulamazsa fallback: aynı compose dosyası düz
+  `docker compose -f docker-compose.dokploy.yml up` ile kanıtlanır, Dokploy Linux VM'e ertelenir.
+
+### Görevler: T53 (Dockerfile'lar + dokploy compose) → CHECKPOINT AE (compose ile uçtan uca) →
+T54 (Dokploy kurulum + deploy + smoke) → CHECKPOINT AF (final, insan onayı).
 
 Detaylı görev listesi: [todo.md](./todo.md).
