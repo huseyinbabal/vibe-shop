@@ -91,6 +91,61 @@ jobs:
 
       - run: npm run build
 
+  integration:
+    name: Integration (Postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # GitHub, healthcheck yeşile dönmeden hiçbir step'i başlatmaz; yani
+    # testler Postgres hazır olmadan çalışmaz.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: vibeshop
+          POSTGRES_PASSWORD: vibeshop
+          POSTGRES_DB: vibeshop
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vibeshop -d vibeshop"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+          --health-start-period 10s
+
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: vibeshop
+      PGPASSWORD: vibeshop
+      PGDATABASE: vibeshop
+      TEST_DATABASE_URL: postgres://vibeshop:vibeshop@localhost:5432/vibeshop?sslmode=disable
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Şemayı kur (migrations/apply.sh)
+        # apply.sh, SQL'leri /migrations altında arar (migrations/Dockerfile'da
+        # oraya kopyalanıyor), bu yüzden script'i kendi imajı üzerinden
+        # çalıştırıyoruz — prod'daki migration yolunun aynısı.
+        run: |
+          docker build -t vibeshop-migrations ./migrations
+          docker run --rm --network host \
+            -e PGHOST -e PGPORT -e PGUSER -e PGPASSWORD -e PGDATABASE \
+            vibeshop-migrations
+
+      - name: Şema doğrula
+        run: psql "$TEST_DATABASE_URL" -c "\dt"
+
+      - name: Integration testleri
+        run: go test -tags=integration -race -count=1 ./...
+
   build:
     name: Build (Go)
     runs-on: ubuntu-latest
