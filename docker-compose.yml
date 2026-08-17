@@ -6,7 +6,9 @@ services:
       POSTGRES_PASSWORD: vibeshop
       POSTGRES_DB: vibeshop
     ports:
-      - "5432:5432"
+      # Host portu .env'deki POSTGRES_PORT ile değiştirilebilir (varsayılan 5432);
+      # 5432'nin başka bir projede dolu olduğu geliştirme makineleri için.
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - vibeshop-postgres-data:/var/lib/postgresql/data
     healthcheck:

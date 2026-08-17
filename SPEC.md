@@ -23,7 +23,15 @@
    çünkü "her kullanıcı yalnızca kendi sepetini/siparişlerini görür" kuralı bir kullanıcı kimliği gerektirir.
 5. **Keycloak'a geçiş — tek kimlik sağlayıcı** (eski `/api/register` + `/api/login` (HS256 JWT)
    kaldırılır; tüm korumalı uçlar — sepet, sipariş ve artık ürün yazma uçları — yalnızca geçerli
-   bir Keycloak token'ı ile çalışır; `GET /api/products*` herkese açık kalır) ← *şu anki dilim*, bkz. §10.
+   bir Keycloak token'ı ile çalışır; `GET /api/products*` herkese açık kalır) ✅ tamamlandı, bkz. §10.
+6. **Frontend (SPA)** — ürün listesi, ürün detay, sepet ve Keycloak girişli login sayfaları;
+   giriş yapmamış herkes login'e yönlendirilir; veri Go API'den (:8080); `design/` mockup'larına
+   sadık, shadcn/ui ile ✅ tamamlandı, bkz. §11.
+7. **iOS uygulaması (Expo React Native)** — mevcut backend'le giriş + **yeni `/api/register`**
+   (Keycloak Admin API üzerinden) ile kayıt; web frontend'e yakın görünüm; Maestro ile E2E
+   ← *şu anki dilim*, bkz. §12.
+8. **Local Dokploy deploy'u** — mevcut compose stack'i (PG + Keycloak + API + web) Dockerfile'lar
+   ve Dokploy compose projesi olarak local Dokploy'a kurulur, bkz. §13.
 
 ## 2. Komutlar (Commands)
 
@@ -667,3 +675,291 @@ vibe-shop/
 - Eski auth'tan ölü kod bırakma (`users` tablosu, bcrypt, HS256 token kodu "belki lazım olur"
   diye tutulmaz).
 - `keycloak/vibe-shop-realm.json`'daki dev credential'ları production için kullanma/önerme.
+
+---
+
+## 11. Dilim 6 — Frontend (SPA): Ürünler, Sepet ve Keycloak Girişi
+
+### 11.1 Amaç
+
+vibe-shop'a, Go API'sini (:8080) tüketen bir web arayüzü eklenir. Görsel yön `design/`
+klasöründeki mockup'lardır (shadcn/ui görünümü); sayfalar bu çizimlere **mümkün olan en yakın**
+şekilde, shadcn/ui bileşenleriyle inşa edilir.
+
+| Sayfa | Rota | Kaynak tasarım | Veri |
+|---|---|---|---|
+| Login | `/login` | `design/01-login.png` | Keycloak token endpoint'i |
+| Ürün listesi | `/` | `design/02-product-list.png` | `GET /api/products` |
+| Ürün detay | `/products/:id` | `design/03-product-detail.png` | `GET /api/products/{id}` + `POST /api/cart` |
+| Sepet | `/cart` | `design/04-cart.png` | `GET /api/cart` + `POST /api/orders` |
+| Sipariş onayı | `/cart` akışının sonucu | `design/05-order-confirmation.png` | `POST /api/orders` yanıtı |
+
+- **Koruma kuralı (kullanıcı kararı):** giriş yapmamış kullanıcı **hangi rotaya girerse girsin**
+  `/login`'e yönlendirilir — ürün listesi API'de public olsa bile SPA'da giriş ister.
+  Login olan kullanıcı `/login`'e giderse `/`'a yönlendirilir.
+- **Giriş (Keycloak, ROPC):** login sayfasındaki e-posta/parola formu, Keycloak'ın token
+  endpoint'ine **Direct Access Grant** (`grant_type=password`, client `vibe-shop-api` — realm'de
+  zaten açık) ile doğrudan istek atar; dönen `access_token`/`refresh_token` saklanır. Bu bilinçli
+  bir sadelik tercihidir (dev/öğrenme projesi): Authorization Code + PKCE yönlendirme akışına
+  geçiş ayrı bir dilim adayıdır ("önce sor"). Çıkış = token'ları silip `/login`'e dönmek.
+- **Token yenileme:** Keycloak access token'ı kısa ömürlüdür (~5 dk). API çağrısı `401` dönerse
+  istemci **bir kez** `refresh_token` ile yeniler ve isteği tekrarlar; yenileme de başarısızsa
+  token'lar silinir ve `/login`'e yönlendirilir. Realm'in token ömürlerini değiştirmek "önce sor".
+- **CORS/ağ:** Go API'ye CORS eklenmez; dev'de Vite proxy'si `/api` → `http://localhost:8080`'e
+  iletir (SPA istekleri hep göreli `/api/...`). Keycloak'a tarayıcıdan doğrudan istek için
+  client'a `webOrigins: ["http://localhost:5173"]` eklenir (realm import dosyasında).
+- **Bilinen tasarım sapmaları (bilinçli):**
+  - `design/04-cart.png`'deki adet artır/azalt ve satır silme kontrolleri **bu dilimde yok** —
+    backend desteklemiyor (SPEC §9.6 "önce sor"); sepet satırları adetleriyle salt-okunur gösterilir.
+  - `design/01-login.png`'deki "Keycloak ile devam et" butonu yoktur; form zaten Keycloak'a
+    gittiği için ikinci bir yol koymak kafa karıştırır. Form alanları + hata durumu birebir uygulanır.
+  - Admin sayfası (`design/06`) bu dilimin kapsamı dışındadır.
+
+**Başarı ölçütü:** Backend + Keycloak ayaktayken `npm run dev` ile SPA açılır; token'sız her
+rota `/login`'e düşer; `testuser`/`test1234` ile giriş çalışır; ürünler API'den listelenir,
+detay sayfasından sepete ürün eklenir, sepette doğru toplam görünür, "Siparişi Tamamla" siparişi
+oluşturup onay görünümünü (sipariş no + kalemler + toplam) gösterir ve sepet boşalır; çıkış
+sonrası korumalı rotalar yine `/login`'e düşer; `npm run build`, `npm run lint` ve
+`npm run test` temiz.
+
+### 11.2 Komutlar (ek)
+
+| Komut | Amaç |
+|-------|------|
+| `cd frontend && npm install` | Frontend bağımlılıklarını kurar |
+| `cd frontend && npm run dev` | Vite dev sunucusu — `http://localhost:5173` (proxy: `/api` → `:8080`) |
+| `cd frontend && npm run build` | Production build (`tsc` + `vite build`) |
+| `cd frontend && npm run test` | Vitest ile birim/bileşen testleri |
+| `cd frontend && npm run lint` | ESLint |
+
+> Tam akış için üç süreç gerekir: `make start` (Postgres + Keycloak + API) ve `npm run dev`.
+
+### 11.3 Proje Yapısı (ek)
+
+```
+vibe-shop/
+  frontend/                    # SPA — Go modülünden tamamen ayrı
+    package.json               # React 19 + Vite + TypeScript
+    vite.config.ts             # @tailwindcss/vite + /api proxy → :8080
+    components.json            # shadcn/ui yapılandırması
+    src/
+      main.tsx                 # router + AuthProvider kablolaması
+      lib/
+        api.ts                 # fetch sarmalayıcı: Bearer ekler, 401'de bir kez refresh
+        auth.tsx               # AuthContext: login (ROPC), logout, token saklama
+      components/
+        ui/                    # shadcn/ui bileşenleri (üretilmiş)
+        navbar.tsx             # wordmark + Ürünler + sepet rozeti + kullanıcı/çıkış
+        require-auth.tsx       # korumalı rota sarmalayıcı → /login
+      pages/
+        login.tsx              # design/01
+        products.tsx           # design/02
+        product-detail.tsx     # design/03
+        cart.tsx               # design/04 + onay görünümü design/05
+      pages/*.test.tsx         # Vitest + Testing Library + MSW
+  keycloak/vibe-shop-realm.json  # + webOrigins (5173)
+```
+
+### 11.4 Kod Stili (ek)
+
+- **Stack:** Vite + React 19 + TypeScript (strict) + Tailwind CSS + **shadcn/ui** (zinc teması).
+  Next.js/SSR yok — API ayrı olduğundan SPA yeterli, proje sadeliği korunur.
+- **Bileşenler:** shadcn/ui üretilen bileşenler `components/ui/` altında kalır ve **elle
+  değiştirilmez**; özelleştirme kompozisyonla yapılır. Sayfalar `pages/`, paylaşılanlar
+  `components/` altında; dosya adları `kebab-case.tsx`.
+- **Veri erişimi tek yerden:** tüm HTTP istekleri `lib/api.ts` üzerinden geçer (göreli `/api/...`);
+  sayfalar `fetch`'i doğrudan çağırmaz. Token yalnızca `lib/auth.tsx` tarafından yönetilir.
+- **Görünüm dili (mockup'larla eşleşen):** zinc nötr palet, tek koyu birincil buton,
+  `zinc-100` zeminli ürün görselleri, ince `zinc-200` border'lı `rounded-lg` kartlar, Inter.
+  Fiyat biçimi `₺249,90` (`Intl.NumberFormat('tr-TR')`).
+- Durum yönetimi için ek kütüphane yok (React state + context yeterli); yeni bağımlılık "önce sor".
+- **Onaylı istisna (2026-07-15):** API'nin dinlediği adres `ADDR` env değişkeninden okunur
+  (boşsa `:8080` — mevcut davranış birebir korunur). Gerekçe: geliştirme makinesinde 8080'i
+  başka bir proje kullanabiliyor; Vite proxy hedefi de `VITE_API_URL` ile aynı porta
+  yönlendirilebilir (varsayılan `http://localhost:8080`). Bu, dilimin "backend'e dokunma"
+  sınırının kullanıcı onayıyla açılmış tek istisnasıdır.
+- **Aynı istisnanın devamı — port yapılandırması tek yerden (.env):** `Makefile` `.env`'i
+  yükler ve `PORT`'u `ADDR`'den türetir (mesajlar/`make health` doğru porta bakar);
+  `docker-compose.yml`'de Postgres host portu `${POSTGRES_PORT:-5432}` ile değiştirilebilir
+  (varsayılan 5432 aynen korunur). 5432/8080'in dolu olduğu makinelerde `.env` içinde
+  `POSTGRES_PORT`, `DATABASE_URL` ve `ADDR` birlikte güncellenir; `make start` tek komutla
+  doğru portlarda çalışır.
+
+### 11.5 Test Stratejisi (ek)
+
+- **Çerçeve:** Vitest + React Testing Library + **MSW** (ağ katmanı testte taklit edilir —
+  DB'siz frontend testinde endüstri standardı; gerçek API/Keycloak entegrasyonu manuel
+  checkpoint'te kanıtlanır, dilim 5'teki desenle aynı).
+- Kapsanacak davranışlar:
+  - token'sız korumalı rota → `/login`'e yönlendirme; login sonrası hedefe dönüş.
+  - login: geçersiz kimlik → form hatası (`invalid_grant` → "E-posta veya parola hatalı");
+    başarı → token saklanır ve yönlendirilir.
+  - `lib/api.ts`: `401` → bir kez refresh + retry; refresh başarısız → token'lar silinir, `/login`.
+  - ürün listesi: API'den gelen ürünler kart olarak render edilir; boş liste durumu.
+  - ürün detay: adet seçimi + "Sepete Ekle" → doğru gövde ve `Authorization` header'ı ile `POST /api/cart`.
+  - sepet: kalemler + satır/genel toplam; "Siparişi Tamamla" → onay görünümü; boş sepet durumu.
+- **Geçiş ölçütü:** `npm run test` yeşil · `npm run build` temiz · `npm run lint` temiz ·
+  Go tarafında `go test ./...` etkilenmeden yeşil kalır.
+
+### 11.6 Sınırlar (ek/değişiklik)
+
+**Her zaman yap (ek):**
+- Veriyi yalnızca Go API'den al; SPA içinde ürün/sepet verisi hardcode etme.
+- Token'ı yalnızca `lib/auth.tsx` yönetsin; `Authorization` header'ı tek yerden eklensin.
+- Tasarım kararlarında `design/` mockup'larını referans al; bilinçli sapmaları SPEC'e yaz.
+- Backend'e ve `migrations/`'a dokunma (yalnızca `keycloak/vibe-shop-realm.json`'a `webOrigins` eklenir).
+
+**Önce sor (ek):**
+- Yeni npm bağımlılığı eklemeden önce (kurulum iskeletinin getirdikleri + MSW hariç).
+- ROPC yerine Authorization Code + PKCE'ye geçmeden önce; realm token ömürlerini değiştirmeden önce.
+- Sepette adet azaltma/satır silme için backend ucu eklemeden önce (ayrı dilim).
+- Admin sayfasını (design/06) inşa etmeden önce; Go API'ye CORS eklemeden önce.
+- Makefile'a frontend hedefleri eklemeden önce.
+
+**Asla yapma (ek):**
+- Token'ları URL'de taşıma veya loglama; parolayı Keycloak dışına gönderme.
+- `components/ui/` altındaki üretilmiş shadcn dosyalarını elle yamalama.
+- API'nin davranışına SPA tarafında güvenmemek gerekeni: istemci doğrulaması API doğrulamasının
+  yerine geçmez (400'ler yine de düzgün gösterilir).
+- Backend Go kodunda bu dilim kapsamında değişiklik yapma.
+
+---
+
+## 12. Dilim 7 — iOS Uygulaması (Expo React Native) + Kayıt API'si
+
+### 12.1 Amaç
+
+vibe-shop'a, web SPA ile aynı backend'i kullanan bir **iOS uygulaması** eklenir (Expo React
+Native). Kullanıcı mobilde **kayıt olur ve giriş yapar**; ürünleri gezer, sepete ekler,
+sipariş verir. Görünüm, web frontend'in zinc/shadcn dilinin RN karşılığıdır.
+
+**Yeni backend ucu — `POST /api/register` (kullanıcı kararı, 2026-07-20):** Dilim 5'te local
+kayıt kaldırılmıştı; mobil native kayıt formu istediği için backend'e, **Keycloak Admin API**'sini
+çağırarak realm'de kullanıcı oluşturan bir uç eklenir:
+
+| Metot & Yol | Koruma | Başarı | Gövde (istek → yanıt) |
+|---|---|---|---|
+| `POST /api/register` | public | `201` | `{"email","password"}` → `{"id","email"}` (parola dönmez) |
+
+- Doğrulama: email boş değil/`@` içerir; parola ≥ 8 karakter (aksi `400`). Var olan email → `409`.
+- Backend, realm'e eklenen **confidential service client** (`vibe-shop-backend`,
+  `serviceAccountsEnabled: true`, realm-management `manage-users` rolü, dev-only secret) ile
+  `client_credentials` token'ı alır ve `POST /admin/realms/vibe-shop/users` çağırır
+  (email doğrulanmış + kalıcı parola ile). Secret `KEYCLOAK_ADMIN_CLIENT_SECRET` env'inden okunur.
+- Kayıt sonrası mobil, mevcut ROPC akışıyla otomatik giriş yapar (web'dekiyle aynı token yolu).
+
+**Mobil sayfalar (web SPA ile birebir kapsam + kayıt):** login, register, ürün listesi,
+ürün detay, sepet + sipariş onayı. Tüm ekranlar (login/register hariç) giriş korumalı;
+`user_id` izolasyonu, fiyat snapshot'ı vb. davranışlar backend'den aynen gelir.
+
+**Başarı ölçütü:** iOS simülatöründe `npx expo run:ios` (veya Expo Go) ile uygulama açılır;
+kayıt → otomatik giriş → ürünler listelenir → detaydan sepete ekle → sepette doğru toplam →
+sipariş → onay ekranı + sepet boşalır; çıkış sonrası korumalı ekranlar login'e döner;
+`maestro test mobile/.maestro/` tüm akışlarda yeşil; backend `go test ./...` yeşil kalır.
+
+### 12.2 Komutlar (ek)
+
+| Komut | Amaç |
+|-------|------|
+| `cd mobile && npm install` | Mobil bağımlılıkları kurar |
+| `cd mobile && npx expo start` | Metro bundler (Expo Go ile) |
+| `cd mobile && npx expo run:ios` | iOS simülatöründe native build ile çalıştırır |
+| `cd mobile && npm run lint` | ESLint |
+| `cd mobile && npm run test` | Jest birim testleri (varsa) |
+| `maestro test mobile/.maestro/` | Maestro E2E akışları (simülatör + stack ayakta olmalı) |
+| `curl -s -X POST localhost:8090/api/register -d '{"email":"yeni@vibe.shop","password":"parola123"}'` | Kayıt → `201` |
+
+### 12.3 Proje Yapısı (ek)
+
+```
+vibe-shop/
+  keycloak/vibe-shop-realm.json   # + vibe-shop-backend service client (manage-users)
+  internal/auth/
+    admin.go                      # Keycloak Admin API istemcisi: CreateUser (client_credentials)
+    admin_test.go                 # httptest ile admin API mock'u (token + users uçları)
+    register.go                   # POST /api/register handler'ı + doğrulama
+    register_test.go
+  internal/http/router.go         # public POST /api/register rotası
+  cmd/server/main.go              # KEYCLOAK_ADMIN_CLIENT_SECRET okunur
+  mobile/                         # Expo uygulaması (Go modülünden ve frontend/'den ayrı)
+    app/                          # expo-router ekranları
+      (auth)/login.tsx  register.tsx
+      (shop)/index.tsx  product/[id].tsx  cart.tsx
+    lib/api.ts                    # fetch sarmalayıcı (Bearer + 401'de refresh-retry)
+    lib/auth.ts                   # ROPC login/register/logout; token'lar expo-secure-store'da
+    .maestro/                     # Maestro E2E akışları (login.yml, register.yml, shop-flow.yml)
+```
+
+### 12.4 Kod Stili (ek)
+
+- **Stack:** Expo (managed) + TypeScript strict + **expo-router** + **NativeWind** (Tailwind
+  sözdizimi — web'in zinc paletiyle aynı görsel dil). Durum için ek kütüphane yok.
+- **Token saklama:** `expo-secure-store` (mobilde localStorage yerine güvenli karşılık).
+  API/Keycloak adresleri `EXPO_PUBLIC_API_URL` / `EXPO_PUBLIC_KEYCLOAK_URL` env'lerinden.
+- **Veri erişimi:** tüm istekler `lib/api.ts` üzerinden; kimlik yalnızca `lib/auth.ts`'te
+  (web'deki desenin RN uyarlaması). Fiyat biçimi `Intl.NumberFormat('tr-TR')`.
+- **Backend tarafı:** yeni kod yalnızca `internal/auth` + router/main kablolaması; mevcut
+  `httpx` yardımcıları ve hata gövdesi formatı korunur. Admin token'ı memory'de cache'lenir,
+  süresi dolunca yenilenir; Keycloak'a erişilemezse `503 {"error":"registration unavailable"}`.
+
+### 12.5 Test Stratejisi (ek)
+
+- **Backend:** `admin_test.go`/`register_test.go` — Keycloak admin API'si `httptest` ile taklit
+  edilir (token ucu + users ucu; 201/409/hata yolları). Gerçek Keycloak'a karşı kayıt,
+  checkpoint'te curl ile kanıtlanır (dilim 5 deseni).
+- **Mobil E2E — Maestro:** `.maestro/` altında en az üç akış: (1) kayıt → otomatik giriş,
+  (2) yanlış parola → hata mesajı + geçerli giriş, (3) alışveriş — ürün listesi → detay →
+  sepete ekle → sepet toplamı → sipariş → onay → sepet boş. Akışlar gerçek local stack'e karşı
+  koşar (mock yok); her koşuda benzersiz email üretilir (`register` akışı tekrar koşulabilir).
+- **Geçiş ölçütü:** `go test ./...` yeşil · mobil lint temiz · `maestro test mobile/.maestro/`
+  yeşil (simülatör + `make start` ayakta).
+
+### 12.6 Sınırlar (ek/değişiklik)
+
+**Her zaman yap (ek):**
+- Parolayı yalnızca Keycloak'a gönder (ROPC/token ve admin create-user); asla loglama/saklama.
+- Admin client secret'ını env'den oku; register hatalarında Keycloak iç detayını sızdırma.
+- Kimliği yalnızca `lib/auth.ts` + secure-store yönetsin; token'ları AsyncStorage'a koyma.
+- Mobil görünümde web'in zinc dilini ve Türkçe metinlerini koru.
+
+**Önce sor (ek):**
+- Yeni npm/Expo bağımlılığı (iskelet + NativeWind + secure-store dışında) eklemeden önce.
+- Register'a email doğrulama/parola politikası/rate-limit eklemeden önce.
+- Android desteği, push notification, offline cache eklemeden önce.
+- Realm'deki admin client'ın rollerini genişletmeden önce.
+
+**Asla yapma (ek):**
+- Admin client secret'ıyla mobil uygulamadan doğrudan Keycloak Admin API'si çağırma
+  (secret yalnızca backend'de yaşar).
+- Maestro akışlarını mock server'a karşı "yeşil" gösterme.
+- Web frontend'in davranışını bu dilimde değiştirme.
+
+---
+
+## 13. Dilim 8 — Local Dokploy Deploy'u
+
+### 13.1 Amaç
+
+Local'de docker compose ile koşan stack (Postgres + Keycloak + API + web), **Dokploy**
+üzerinde tek bir compose projesi olarak deploy edilir — amaç production-benzeri bir kurulum
+provası. Dokploy local'de Docker içinde kurulur (resmi hedef Linux'tur; macOS/Docker
+Desktop'ta deneysel çalışır — bilinen risk).
+
+- **Yeni dosyalar:** `Dockerfile` (Go API, multi-stage, distroless/alpine), `frontend/Dockerfile`
+  (Vite build → nginx; nginx `/api`'yi API servisine proxy'ler — CORS'suz mimari korunur),
+  `docker-compose.dokploy.yml` (pg + keycloak + migrasyonları uygulayan tek seferlik init +
+  api + web).
+- **Keycloak issuer tutarlılığı:** Keycloak `KC_HOSTNAME` ile dışarıdan görünen adresine
+  sabitlenir; API'nin `KEYCLOAK_ISSUER_URL`'i ve istemcilerin kullandığı URL birebir aynı
+  olur (token `iss` eşleşmesi bozulmaz).
+- **Başarı ölçütü:** Dokploy panelinde proje "running"; web arayüzü Dokploy URL'inden açılır,
+  kayıt/giriş/alışveriş akışı bu kurulumda uçtan uca çalışır; `docker compose` local dev akışı
+  (make start) değişmeden kalır.
+
+### 13.2 Sınırlar (ek)
+
+**Her zaman yap:** imajlarda secret gömme (env ile geç); migration'ları idempotent uygula
+(`IF NOT EXISTS` değil — sıra numarasıyla bir kez koşan init job).
+**Önce sor:** TLS/gerçek domain, imaj registry'ye push, Dokploy'da otomatik deploy (git webhook).
+**Asla yapma:** dev compose'unu bozma; realm'deki dev credential'ları production'a taşıma
+(bu kurulum da local/dev provasıdır).

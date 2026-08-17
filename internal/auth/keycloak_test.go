@@ -80,7 +80,7 @@ func validClaims(issuer string) jwt.RegisteredClaims {
 func TestKeycloakVerifier_ValidToken(t *testing.T) {
 	key := newRSAKey(t)
 	issuer := newJWKSServer(t, &key.PublicKey)
-	verifier, err := NewKeycloakVerifier(issuer)
+	verifier, err := NewKeycloakVerifier(issuer, issuer)
 	if err != nil {
 		t.Fatalf("NewKeycloakVerifier: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestKeycloakVerifier_ValidToken(t *testing.T) {
 func TestKeycloakVerifier_RejectsBadTokens(t *testing.T) {
 	key := newRSAKey(t)
 	issuer := newJWKSServer(t, &key.PublicKey)
-	verifier, err := NewKeycloakVerifier(issuer)
+	verifier, err := NewKeycloakVerifier(issuer, issuer)
 	if err != nil {
 		t.Fatalf("NewKeycloakVerifier: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestKeycloakVerifier_RejectsBadTokens(t *testing.T) {
 func TestRequireAuth_Middleware(t *testing.T) {
 	key := newRSAKey(t)
 	issuer := newJWKSServer(t, &key.PublicKey)
-	verifier, err := NewKeycloakVerifier(issuer)
+	verifier, err := NewKeycloakVerifier(issuer, issuer)
 	if err != nil {
 		t.Fatalf("NewKeycloakVerifier: %v", err)
 	}
@@ -237,7 +237,7 @@ func TestNewKeycloakVerifier_UnreachableJWKS(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	if _, err := NewKeycloakVerifier(srv.URL + "/realms/vibe-shop"); err == nil {
+	if _, err := NewKeycloakVerifier(srv.URL+"/realms/vibe-shop", srv.URL+"/realms/vibe-shop"); err == nil {
 		t.Fatal("NewKeycloakVerifier succeeded against a broken JWKS endpoint, want error")
 	}
 }

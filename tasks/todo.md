@@ -399,3 +399,198 @@ Detaylar: [plan.md](./plan.md#dilim-5--keycloaka-geçiş-tek-kimlik-sağlayıcı
   - Yapılacak: `go mod tidy` son kontrol (keyfunc kayıtlı, bcrypt yok).
   - Doğrulama: `gofmt -l .` boş · `go vet ./...` temiz · `go test ./...` yeşil (Docker açık).
 - [ ] **CHECKPOINT U (final)** — İnsan onayı; dilim tamam.
+
+---
+
+## Dilim 6 — Frontend (SPA) ✅ tamamlandı
+
+Detaylar: [plan.md](./plan.md#dilim-6--frontend-spa--şu-anki-dilim) · Spec: [../SPEC.md](../SPEC.md) §11
+
+### Faz 0 — İskelet
+- [x] **T40 — frontend/ iskeleti: Vite + React + TS + Tailwind + shadcn/ui**
+  - Yapılacak: `npm create vite@latest frontend -- --template react-ts`; Tailwind
+    (`@tailwindcss/vite`) ve shadcn/ui (`npx shadcn@latest init`, zinc teması) kurulur;
+    `vite.config.ts`'e `/api` → `http://localhost:8080` proxy'si eklenir; Vitest + Testing
+    Library + MSW dev bağımlılıkları eklenir; `App.tsx`'te React Router ile boş rota iskeleti
+    (`/login`, `/`, `/products/:id`, `/cart`).
+  - Kabul: `npm run dev` 5173'te açılır; proxy üzerinden `/api/products` gerçek API'ye ulaşır;
+    `npm run build` ve `npm run lint` temiz; Go tarafında hiçbir dosya değişmez.
+  - Doğrulama: `npm run dev` + tarayıcıda `http://localhost:5173`; `curl localhost:5173/api/products`.
+  - Dosyalar: `frontend/` (yeni ağaç). **Kapsam: M**
+- [x] **T41 — Keycloak client'a webOrigins**
+  - Yapılacak: `keycloak/vibe-shop-realm.json`'da `vibe-shop-api` client'ına
+    `"webOrigins": ["http://localhost:5173"]` eklenir; Keycloak container'ı yeniden yaratılır.
+  - Kabul: tarayıcıdan (origin 5173) token endpoint'ine `grant_type=password` isteği CORS
+    engeline takılmaz.
+  - Doğrulama: `docker compose up -d --force-recreate keycloak` sonrası tarayıcı konsolundan
+    fetch denemesi (veya CHECKPOINT W'de canlı giriş).
+  - Dosyalar: `keycloak/vibe-shop-realm.json`. **Kapsam: S**
+- [x] **CHECKPOINT V** — `npm run dev` ayakta, proxy çalışıyor, `npm run build` temiz.
+
+### Faz 1 — Kimlik dikey dilimi
+- [x] **T42 — auth altyapısı + login sayfası + rota koruması**
+  - Yapılacak: `lib/auth.tsx` — AuthContext: `login(email, password)` Keycloak token
+    endpoint'ine ROPC isteği atar, `access_token`/`refresh_token`'ı localStorage'da saklar;
+    `logout()` temizler; `refresh()` tek sefer yeniler. `lib/api.ts` — fetch sarmalayıcı:
+    göreli `/api/...`, `Authorization: Bearer` ekler, `401` → refresh + retry, olmadı →
+    oturumu temizle + `/login`. `components/require-auth.tsx` — token yoksa `state.from` ile
+    `/login`'e. `pages/login.tsx` — `design/01`: ortalanmış kart, E-posta/Parola alanları,
+    "Giriş Yap" butonu, `invalid_grant` → "E-posta veya parola hatalı" form hatası; girişte
+    geldiği rotaya döner; token varken `/login` → `/`.
+  - Kabul: token'sız her rota `/login`'e düşer; geçerli kimlikle giriş çalışır; yanlış parola
+    form hatası gösterir; 401→refresh→retry akışı çalışır.
+  - Doğrulama: `npm run test` — MSW ile login başarı/başarısızlık, guard yönlendirmesi,
+    api 401→refresh senaryoları yeşil.
+  - Dosyalar: `frontend/src/lib/auth.tsx`, `lib/api.ts`, `components/require-auth.tsx`,
+    `pages/login.tsx`, testleri. **Kapsam: L**
+  - Bağımlılık: T40, T41.
+- [x] **CHECKPOINT W** — Gerçek stack'le (make start + npm run dev): token'sız `/` → `/login`;
+  `testuser`/`test1234` girişi başarılı; yanlış parola hata mesajı; çıkış sonrası tekrar `/login`.
+
+### Faz 2 — Ürün sayfaları
+- [x] **T43 — navbar + ürün listesi sayfası**
+  - Yapılacak: `components/navbar.tsx` — `design/02` üst barı: vibe-shop wordmark, "Ürünler",
+    arama girdisi (görsel; filtre client-side isteğe bağlı), sepet ikonu + kalem sayısı rozeti,
+    kullanıcı menüsü (Çıkış). `pages/products.tsx` — `GET /api/products`'tan 4 kolonlu kart
+    grid'i: zinc-100 görsel alanı (placeholder), ad, `₺` fiyat (`Intl.NumberFormat('tr-TR')`),
+    "Sepete Ekle" butonu (`POST /api/cart`, quantity 1, başarıda rozet güncellenir + toast).
+    Boş liste durumu.
+  - Kabul: liste gerçek API verisiyle render olur; sepete ekleme çalışır; boş durum düzgün.
+  - Doğrulama: `npm run test` — MSW ile liste render, boş durum, sepete ekleme istek gövdesi.
+  - Dosyalar: `frontend/src/components/navbar.tsx`, `pages/products.tsx`, testleri. **Kapsam: M**
+  - Bağımlılık: T42.
+- [x] **T44 — ürün detay sayfası**
+  - Yapılacak: `pages/product-detail.tsx` — `design/03`: breadcrumb, sol büyük zinc-100 görsel,
+    sağda ad + fiyat + açıklama metni + adet stepper'ı (- n +, min 1) + "Sepete Ekle"
+    (`POST /api/cart` seçili adetle) + "Kargo ve İade"/"Malzeme" akordeonu (statik metin).
+    Olmayan id → 404 durumu ("Ürün bulunamadı" + listeye dön).
+  - Kabul: detay gerçek veriyle render; adet stepper'ı doğru gövde gönderir; 404 durumu düzgün.
+  - Doğrulama: `npm run test` — MSW ile render, stepper, POST gövdesi, 404 senaryosu.
+  - Dosyalar: `frontend/src/pages/product-detail.tsx`, testi. **Kapsam: M**
+  - Bağımlılık: T43.
+
+### Faz 3 — Sepet ve sipariş
+- [x] **T45 — sepet sayfası + sipariş onayı görünümü**
+  - Yapılacak: `pages/cart.tsx` — `design/04`: solda kalem tablosu (görsel placeholder, ad,
+    birim fiyat, adet **salt-okunur**, satır toplamı), sağda "Sipariş Özeti" kartı (ara toplam,
+    kargo "Ücretsiz", toplam, "Siparişi Tamamla"). Buton `POST /api/orders` çağırır; başarıda
+    `design/05` onay görünümü (yeşil check, "Siparişin Alındı", sipariş no, kalemler snapshot
+    fiyatlarıyla, toplam, "Alışverişe Devam Et" → `/`); sepet rozeti sıfırlanır. Boş sepet
+    durumu: mesaj + listeye yönlendiren buton ("Siparişi Tamamla" gizli/pasif).
+  - Kabul: toplamlar API'dekiyle aynı; sipariş sonrası onay görünümü + boş sepet; stepper/silme
+    bilinçli olarak yok (SPEC §11.1).
+  - Doğrulama: `npm run test` — MSW ile dolu/boş sepet, sipariş akışı, toplam hesapları.
+  - Dosyalar: `frontend/src/pages/cart.tsx`, testi. **Kapsam: M**
+  - Bağımlılık: T43.
+- [x] **CHECKPOINT X** — Uçtan uca gerçek stack'le: login → ürünler listelenir → detaydan 2 adet
+  sepete ekle → sepette doğru toplam → "Siparişi Tamamla" → onay görünümü (no + kalemler +
+  toplam) → sepet boş; `testuser2` ile girişte sepet boş (izolasyon).
+
+### Faz 4 — Kalite kapısı
+- [x] **T46 — Kalite + tasarım karşılaştırması**
+  - Yapılacak: `npm run lint`/`build`/`test` son koşu; her sayfanın `design/` mockup'ıyla yan
+    yana karşılaştırılması, kalan görsel farkların düzeltilmesi veya SPEC §11.1'e bilinen sapma
+    olarak eklenmesi; README/SPEC komut tablolarının güncel olduğunun kontrolü.
+  - Doğrulama: `npm run build` + `npm run lint` + `npm run test` temiz · `go test ./...`
+    etkilenmedi · görsel karşılaştırma tamam.
+- [ ] **CHECKPOINT Y (final)** — İnsan onayı; dilim tamam.
+
+---
+
+## Dilim 7 — iOS Uygulaması (Expo RN) + Kayıt API'si ← *şu anki dilim*
+
+Detaylar: [plan.md](./plan.md#dilim-7--ios-uygulaması-expo-rn--kayıt-apisi--şu-anki-dilim) · Spec: [../SPEC.md](../SPEC.md) §12
+
+### Faz 1 — Kayıt API'si (backend)
+- [x] **T47 — realm'e admin client + POST /api/register**
+  - Yapılacak: `keycloak/vibe-shop-realm.json`'a `vibe-shop-backend` confidential client
+    (`serviceAccountsEnabled: true`, secret `dev-backend-secret`, realm-management
+    `manage-users` service-account rolü). `internal/auth/admin.go` — `AdminClient`:
+    `client_credentials` token'ı alır + cache'ler, `CreateUser(ctx, email, password)`
+    (`emailVerified: true`, kalıcı parola); Keycloak 409 → `ErrEmailTaken`, erişilemez → hata.
+    `internal/auth/register.go` — `registerInput` doğrulaması (email `@`, parola ≥ 8 → `400`),
+    başarı `201 {"id","email"}`, duplicate `409 {"error":"email already registered"}`,
+    Keycloak down → `503`. Router'a public `POST /api/register`; `main.go`
+    `KEYCLOAK_ADMIN_CLIENT_SECRET` okur (boşsa fatal); `.env`/`.env.example` güncellenir.
+  - Kabul: SPEC §12.1 tablosuyla birebir; parola hiçbir log/yanıtta yok; secret env'den.
+  - Doğrulama: `admin_test.go` + `register_test.go` (httptest ile token/users mock'u:
+    201, 409, doğrulama 400'leri, Keycloak down 503) yeşil · `go build ./...`.
+  - Dosyalar: `keycloak/vibe-shop-realm.json`, `internal/auth/admin.go`, `admin_test.go`,
+    `register.go`, `register_test.go`, `internal/http/router.go`, `cmd/server/main.go`,
+    `.env.example`. **Kapsam: L**
+- [x] **CHECKPOINT Z** — Gerçek stack'le: `curl POST /api/register` → `201`; aynı email → `409`;
+  yeni kullanıcıyla ROPC login → token; kısa parola → `400`.
+
+### Faz 2 — Mobil iskelet + kimlik
+- [x] **T48 — mobile/ iskeleti**
+  - Yapılacak: `npx create-expo-app mobile` (TS şablonu) + expo-router + NativeWind +
+    `expo-secure-store`; `lib/api.ts` (Bearer + 401'de tek-sefer refresh-retry, `EXPO_PUBLIC_API_URL`)
+    ve `lib/auth.ts` (ROPC login, register çağrısı, logout, secure-store token'ları) web'deki
+    desenden uyarlanır; boş ekran iskeleti (auth)/(shop) gruplarıyla.
+  - Kabul: `npx expo run:ios` simülatörde açılır; lint temiz.
+  - Doğrulama: simülatörde boot + `npm run lint`.
+  - Dosyalar: `mobile/` (yeni ağaç). **Kapsam: M**
+  - Bağımlılık: yok (T47 ile paralel yürüyebilir).
+- [x] **T49 — login + register ekranları**
+  - Yapılacak: `(auth)/login.tsx` ve `register.tsx` — web login sayfasının RN karşılığı
+    (zinc kart, E-posta/Parola, hata mesajları); register başarıda otomatik login → (shop);
+    korumasız kullanıcı her zaman (auth)'a yönlenir; çıkış token'ları siler. Alanlara
+    `testID` verilir (Maestro için).
+  - Kabul: kayıt→otomatik giriş, yanlış parola hatası, guard yönlendirmesi simülatörde çalışır.
+  - Doğrulama: simülatörde manuel akış (CHECKPOINT AA'da kanıt).
+  - Dosyalar: `mobile/app/(auth)/*`, `lib/auth.ts`. **Kapsam: M**
+  - Bağımlılık: T47, T48.
+- [x] **CHECKPOINT AA** — Simülatörde canlı: kayıt → otomatik giriş → (shop) açılır; çıkış →
+  login'e döner; yanlış parola hata gösterir.
+
+### Faz 3 — Alışveriş ekranları
+- [x] **T50 — ürün listesi + detay**
+  - Yapılacak: `(shop)/index.tsx` — FlatList 2 kolon kart grid'i (zinc placeholder, ad,
+    ₺ fiyat, Sepete Ekle); `(shop)/product/[id].tsx` — detay + adet stepper + sepete ekle +
+    akordeon metinleri; sepet rozeti tab bar'da.
+  - Kabul: gerçek API verisi; sepete ekleme çalışır; 404 durumu düzgün.
+  - Doğrulama: simülatörde manuel + testID'ler hazır.
+  - Dosyalar: `mobile/app/(shop)/*`. **Kapsam: M**
+  - Bağımlılık: T49.
+- [x] **T51 — sepet + sipariş onayı**
+  - Yapılacak: `(shop)/cart.tsx` — kalemler (salt-okunur adet), özet kartı, Siparişi Tamamla →
+    onay görünümü (sipariş no + kalemler + toplam); boş sepet durumu.
+  - Kabul: toplamlar API ile aynı; sipariş sonrası sepet boş; web davranışıyla eş.
+  - Doğrulama: simülatörde manuel (CHECKPOINT AB'de kanıt).
+  - Dosyalar: `mobile/app/(shop)/cart.tsx`. **Kapsam: M**
+  - Bağımlılık: T50.
+- [x] **CHECKPOINT AB** — Simülatörde uçtan uca alışveriş: listele → detay → 2 adet ekle →
+  sepette doğru toplam → sipariş → onay → sepet boş.
+
+### Faz 4 — Maestro + kalite kapısı
+- [x] **T52 — Maestro akışları + kalite**
+  - Yapılacak: `mobile/.maestro/register.yml` (benzersiz email ile kayıt→giriş),
+    `login.yml` (yanlış parola hatası + geçerli giriş), `shop-flow.yml` (alışveriş uçtan uca).
+    testID seçicileri; README'ye koşum notu.
+  - Kabul: `maestro test mobile/.maestro/` üç akışta da yeşil (stack + simülatör ayakta).
+  - Doğrulama: maestro koşusu + `go test ./...` + mobil lint.
+- [x] **CHECKPOINT AC** — Maestro yeşil (kanıt çıktısı).
+- [ ] **CHECKPOINT AD (final)** — İnsan onayı; dilim tamam.
+
+---
+
+## Dilim 8 — Local Dokploy Deploy'u (Dilim 7 sonrası)
+
+Detaylar: [plan.md](./plan.md#dilim-8--local-dokploy-deployu-planlandı-dilim-7-sonrası) · Spec: [../SPEC.md](../SPEC.md) §13
+
+- [x] **T53 — Dockerfile'lar + docker-compose.dokploy.yml**
+  - Yapılacak: API için multi-stage `Dockerfile`; `frontend/Dockerfile` (Vite build → nginx,
+    `/api` proxy); `docker-compose.dokploy.yml` — pg + keycloak (`KC_HOSTNAME`) + tek seferlik
+    migration init servisi + api + web; secret'lar env ile.
+  - Kabul: `docker compose -f docker-compose.dokploy.yml up` ile stack ayağa kalkar; web'den
+    kayıt/giriş/alışveriş çalışır; dev compose etkilenmez.
+  - Doğrulama: compose ile uçtan uca smoke.
+  - Dosyalar: `Dockerfile`, `frontend/Dockerfile`, `frontend/nginx.conf`,
+    `docker-compose.dokploy.yml`. **Kapsam: M**
+- [x] **CHECKPOINT AE** — dokploy compose dosyası düz compose ile uçtan uca çalışıyor.
+- [~] **T54 — Dokploy kurulumu + deploy** (panel kuruldu — http://localhost:3500; admin hesabı + proje import'u kullanıcı adımı)
+  - Yapılacak: local Dokploy kurulumu (Docker içinde; macOS'ta deneysel), compose projesi
+    olarak import + deploy; panelden smoke test. Kurulamazsa fallback plan.md'de.
+  - Kabul: Dokploy panelinde proje "running"; web Dokploy URL'inden uçtan uca çalışır.
+  - Doğrulama: panel + curl/tarayıcı smoke.
+- [ ] **CHECKPOINT AF (final)** — İnsan onayı; dilim tamam.

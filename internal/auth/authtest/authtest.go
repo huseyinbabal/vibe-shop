@@ -56,7 +56,7 @@ func New(t *testing.T) (*auth.KeycloakVerifier, func(sub string) string) {
 	t.Cleanup(srv.Close)
 
 	issuer := srv.URL + "/realms/vibe-shop"
-	verifier, err := auth.NewKeycloakVerifier(issuer)
+	verifier, err := auth.NewKeycloakVerifier(issuer, issuer)
 	if err != nil {
 		t.Fatalf("authtest: new verifier: %v", err)
 	}
