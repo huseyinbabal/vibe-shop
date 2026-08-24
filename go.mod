@@ -1,6 +1,6 @@
 module vibe-shop
 
-go 1.26.3
+go 1.26.6
 
 require (
 	github.com/MicahParks/keyfunc/v3 v3.8.0
