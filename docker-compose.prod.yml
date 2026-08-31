@@ -1,0 +1,103 @@
+# Production compose (Seans 3): Dokploy'da Compose servisi olarak çalışır.
+# ports: yok — alan adı yönlendirmesini Traefik/Dokploy yapar (expose yeterli).
+# Hiçbir secret düz metin değildir; hepsi Dokploy Environment ekranından gelir:
+#   TAG, DOMAIN, DB_PASSWORD, KC_ADMIN_USER, KC_ADMIN_PASSWORD, KC_BACKEND_CLIENT_SECRET
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: vibeshop
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: vibeshop
+    volumes:
+      - vibeshop-prod-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vibeshop -d vibeshop"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # Keycloak kendi verisini ayrı "keycloak" veritabanında tutar (uygulama
+  # şemasıyla karışmasın); bu one-shot servis o DB'yi idempotent oluşturur.
+  keycloak-db-init:
+    image: postgres:16-alpine
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: vibeshop
+      PGPASSWORD: ${DB_PASSWORD}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - psql -d vibeshop -tc "SELECT 1 FROM pg_database WHERE datname='keycloak'" | grep -q 1 || psql -d vibeshop -c "CREATE DATABASE keycloak"
+
+  migrate:
+    image: ghcr.io/huseyinbabal/vibe-shop-migrate:${TAG}
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: vibeshop
+      PGPASSWORD: ${DB_PASSWORD}
+      PGDATABASE: vibeshop
+
+  keycloak:
+    # start-dev DEĞİL: optimize edilmiş prod imajı (KC_DB build'e gömülü,
+    # bkz. keycloak/Dockerfile) + kalıcı Postgres + doğru public hostname.
+    image: vibe-shop-keycloak:prod
+    command: start --optimized --import-realm
+    depends_on:
+      keycloak-db-init:
+        condition: service_completed_successfully
+    environment:
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: vibeshop
+      KC_DB_PASSWORD: ${DB_PASSWORD}
+      # Issuer = tarayıcının gördüğü public URL. Yanlışsa: issuer mismatch → 401.
+      KC_HOSTNAME: https://auth.vibe-shop.${DOMAIN}
+      KC_HTTP_ENABLED: "true"          # TLS'i Traefik sonlandırır
+      KC_PROXY_HEADERS: xforwarded
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_ADMIN_USER}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD}
+    expose:
+      - "8080"
+    restart: unless-stopped
+
+  api:
+    image: ghcr.io/huseyinbabal/vibe-shop-api:${TAG}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      keycloak:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgres://vibeshop:${DB_PASSWORD}@postgres:5432/vibeshop?sslmode=disable
+      # Tek ve doğru URL: KEYCLOAK_INTERNAL_URL artık yok — prod'da herkes
+      # aynı public issuer'ı kullanır.
+      KEYCLOAK_ISSUER_URL: https://auth.vibe-shop.${DOMAIN}/realms/vibe-shop
+      KEYCLOAK_ADMIN_CLIENT_SECRET: ${KC_BACKEND_CLIENT_SECRET}
+    expose:
+      - "8080"
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+  web:
+    # VITE_KEYCLOAK_URL build-time gömülür — bu imaj auth.vibe-shop.${DOMAIN}
+    # için üretilmiştir (frontend/Dockerfile ARG VITE_KEYCLOAK_URL).
+    image: vibe-shop-web:prod
+    depends_on:
+      - api
+    expose:
+      - "80"
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+volumes:
+  vibeshop-prod-pg:
