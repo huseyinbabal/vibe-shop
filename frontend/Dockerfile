@@ -5,6 +5,10 @@ WORKDIR /src
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
+# Keycloak adresi build'e gömülür (Vite): prod imajı build-arg ile üretilir,
+# arg verilmezse auth.ts'teki localhost varsayılanı geçerli kalır (dev).
+ARG VITE_KEYCLOAK_URL
+ENV VITE_KEYCLOAK_URL=${VITE_KEYCLOAK_URL}
 RUN npm run build
 
 FROM nginx:1.27-alpine

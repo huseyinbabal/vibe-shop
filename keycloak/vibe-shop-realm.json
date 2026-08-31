@@ -28,7 +28,8 @@
       "webOrigins": [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
-        "http://localhost:3000"
+        "http://localhost:3000",
+        "https://vibe-shop.procite.ai"
       ]
     }
   ],
@@ -38,7 +39,9 @@
       "enabled": true,
       "serviceAccountClientId": "vibe-shop-backend",
       "clientRoles": {
-        "realm-management": ["manage-users"]
+        "realm-management": [
+          "manage-users"
+        ]
       }
     },
     {
@@ -50,7 +53,11 @@
       "lastName": "User",
       "requiredActions": [],
       "credentials": [
-        { "type": "password", "value": "test1234", "temporary": false }
+        {
+          "type": "password",
+          "value": "test1234",
+          "temporary": false
+        }
       ]
     },
     {
@@ -62,7 +69,11 @@
       "lastName": "UserTwo",
       "requiredActions": [],
       "credentials": [
-        { "type": "password", "value": "test1234", "temporary": false }
+        {
+          "type": "password",
+          "value": "test1234",
+          "temporary": false
+        }
       ]
     }
   ]

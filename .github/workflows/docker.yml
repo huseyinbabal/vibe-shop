@@ -42,10 +42,18 @@ jobs:
             image: vibe-shop-web
             context: frontend
             dockerfile: frontend/Dockerfile
+            # Vite env'i build'e gömülür (runtime'da değişemez): prod imajı
+            # Keycloak'ın public adresiyle üretilmek zorunda.
+            build_args: |
+              VITE_KEYCLOAK_URL=https://auth.vibe-shop.procite.ai
           - name: migrate
             image: vibe-shop-migrate
             context: migrations
             dockerfile: migrations/Dockerfile
+          - name: keycloak
+            image: vibe-shop-keycloak
+            context: keycloak
+            dockerfile: keycloak/Dockerfile
 
     steps:
       - uses: actions/checkout@v4
@@ -76,6 +84,7 @@ jobs:
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
+          build-args: ${{ matrix.build_args }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

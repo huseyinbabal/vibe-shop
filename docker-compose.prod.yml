@@ -49,7 +49,7 @@ services:
   keycloak:
     # start-dev DEĞİL: optimize edilmiş prod imajı (KC_DB build'e gömülü,
     # bkz. keycloak/Dockerfile) + kalıcı Postgres + doğru public hostname.
-    image: vibe-shop-keycloak:prod
+    image: ghcr.io/huseyinbabal/vibe-shop-keycloak:${TAG}
     command: start --optimized --import-realm
     depends_on:
       keycloak-db-init:
@@ -89,9 +89,9 @@ services:
     stop_grace_period: 30s
 
   web:
-    # VITE_KEYCLOAK_URL build-time gömülür — bu imaj auth.vibe-shop.${DOMAIN}
-    # için üretilmiştir (frontend/Dockerfile ARG VITE_KEYCLOAK_URL).
-    image: vibe-shop-web:prod
+    # VITE_KEYCLOAK_URL build-time gömülür — CI, web imajını build-arg ile
+    # auth.vibe-shop.${DOMAIN} için üretir (bkz. docker.yml build_args).
+    image: ghcr.io/huseyinbabal/vibe-shop-web:${TAG}
     depends_on:
       - api
     expose:
