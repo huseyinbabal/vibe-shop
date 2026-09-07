@@ -1,9 +1,17 @@
-# Prometheus scrape yapılandırması.
+# Prometheus yapılandırması.
 # retention (15 gün) burada değil, compose'daki
 # --storage.tsdb.retention.time=15d bayrağıyla ayarlanır.
 global:
   scrape_interval: 15s
   scrape_timeout: 10s
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
 
 scrape_configs:
   # vibe-shop API — aynı Docker ağında olduğu için servis adıyla erişilir.
@@ -16,3 +24,13 @@ scrape_configs:
   - job_name: prometheus
     static_configs:
       - targets: ["localhost:9090"]
+
+  # Alertmanager metrikleri.
+  - job_name: alertmanager
+    static_configs:
+      - targets: ["alertmanager:9093"]
+
+  # Loki metrikleri.
+  - job_name: loki
+    static_configs:
+      - targets: ["loki:3100"]

@@ -1,4 +1,5 @@
-# Gözlemlenebilirlik yığını (SPEC §14): Prometheus + Loki + Alloy + Grafana.
+# Gözlemlenebilirlik yığını (SPEC §14):
+# Prometheus + Alertmanager + Loki + Alloy + Grafana.
 #
 # Dokploy'da AYRI bir Compose servisi olarak, docker-compose.prod.yml'in yanında
 # çalışır. Her iki yığın da "vibe-shop" adlı Docker ağına bağlanır
@@ -9,6 +10,7 @@
 # Dokploy Environment ekranından gelmesi gereken değişkenler:
 #   GRAFANA_PASSWORD  - Grafana admin parolası (düz metin secret yok)
 #
+# Slack webhook'u observability/alertmanager.yml içinde ayarlanır.
 # Traefik/Dokploy alan adı yönlendirmesi Grafana'nın 3000 portuna yapılmalı.
 services:
   prometheus:
@@ -21,17 +23,38 @@ services:
       - --web.enable-lifecycle
     volumes:
       - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus-rules.yml:/etc/prometheus/rules/vibe-shop.yml:ro
       - prometheus-data:/prometheus
+    depends_on:
+      - alertmanager
     expose:
       - "9090"
     restart: unless-stopped
 
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    volumes:
+      - ./observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+      # Slack webhook URL'i (tek satır). Dosyayı oluşturduktan sonra bu satırı açın:
+      # - ./observability/secrets/slack_api_url:/etc/alertmanager/secrets/slack_api_url:ro
+    expose:
+      - "9093"
+    restart: unless-stopped
+
   loki:
     image: grafana/loki:3.3.2
-    # İmajla gelen local-config.yaml: filesystem depolama, veriler /loki altında.
-    command: -config.file=/etc/loki/local-config.yaml
+    command: -config.file=/etc/loki/loki-config.yml
     volumes:
+      - ./observability/loki-config.yml:/etc/loki/loki-config.yml:ro
+      # Ruler local storage: kurallar <dir>/<tenant>/ altında; auth kapalı → "fake".
+      - ./observability/loki-rules.yml:/etc/loki/rules/fake/vibe-shop.yml:ro
       - loki-data:/loki
+    depends_on:
+      - alertmanager
     expose:
       - "3100"
     restart: unless-stopped
@@ -63,6 +86,7 @@ services:
     volumes:
       - grafana-data:/var/lib/grafana
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       - prometheus
       - loki
@@ -72,6 +96,7 @@ services:
 
 volumes:
   prometheus-data:
+  alertmanager-data:
   loki-data:
   alloy-data:
   grafana-data:

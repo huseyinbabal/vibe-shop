@@ -9,3 +9,6 @@
 # Makefile runtime artefaktları
 .server.pid
 *.log
+
+# Observability secret'ları (Slack webhook, SMTP parolası vb.)
+observability/secrets/

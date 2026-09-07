@@ -1,0 +1,45 @@
+# Loki ruler: log tabanlı alarmlar (API'de /metrics yokken ana sinyal budur).
+# Container adı label'ı Alloy tarafından "container", compose servis adı
+# "compose_service" olarak eklenir (bkz. config.alloy).
+groups:
+  - name: vibe-shop-logs
+    rules:
+      - alert: APIPanic
+        expr: |
+          sum(count_over_time({compose_service="api"} |= `panic:` [5m])) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "vibe-shop API panic"
+          description: "Son 5 dakikada API loglarında panic tespit edildi."
+
+      - alert: APIHighErrorLogRate
+        expr: |
+          sum(count_over_time({compose_service="api"} |~ `(?i)\b(error|fatal)\b` [5m])) > 20
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "vibe-shop API hata log oranı yüksek"
+          description: "Son 5 dakikada 20'den fazla error/fatal log satırı (10 dk sürüyor)."
+
+      - alert: KeycloakErrorSpike
+        expr: |
+          sum(count_over_time({compose_service="keycloak"} |~ `(?i)\b(ERROR|SEVERE)\b` [5m])) > 15
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Keycloak hata log oranı yüksek"
+          description: "Son 5 dakikada 15'ten fazla ERROR/SEVERE satırı."
+
+      - alert: ContainerLogsStopped
+        expr: |
+          sum by (compose_service) (count_over_time({job="docker", compose_service=~"api|web|keycloak"}[10m])) == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.compose_service }} log üretmiyor"
+          description: "10 dakikadır hiç log satırı yok — servis durmuş ya da askıda olabilir."

@@ -1,0 +1,52 @@
+# Prometheus alert kuralları. Değerlendirilip Alertmanager'a (alertmanager:9093)
+# gönderilir. Şu an yalnızca scrape edilebilen metrikler var (API'de /metrics
+# endpoint'i eklenene kadar APIDown sürekli firing kalır — bu beklenen sinyaldir).
+groups:
+  - name: vibe-shop-availability
+    rules:
+      - alert: TargetDown
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Hedef down: {{ $labels.job }}"
+          description: "{{ $labels.instance }} ({{ $labels.job }}) 5 dakikadır scrape edilemiyor."
+
+      - alert: APIDown
+        expr: up{job="vibe-shop-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "vibe-shop API erişilemiyor"
+          description: "api:8080/metrics 2 dakikadır scrape edilemiyor (servis down ya da /metrics endpoint'i yok)."
+
+  - name: vibe-shop-prometheus
+    rules:
+      - alert: PrometheusConfigReloadFailed
+        expr: prometheus_config_last_reload_successful == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Prometheus config reload başarısız"
+          description: "Son yapılandırma yüklemesi hatalı — prometheus.yml / kural dosyalarını kontrol edin."
+
+      - alert: PrometheusTSDBCompactionFailing
+        expr: increase(prometheus_tsdb_compactions_failed_total[3h]) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Prometheus TSDB compaction hataları"
+          description: "Son 3 saatte {{ $value | printf \"%.0f\" }} başarısız compaction."
+
+      - alert: PrometheusAlertmanagerNotificationsFailing
+        expr: rate(alertmanager_notifications_failed_total[5m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Alertmanager bildirimleri başarısız"
+          description: "{{ $labels.integration }} entegrasyonuna bildirim gönderilemiyor."
