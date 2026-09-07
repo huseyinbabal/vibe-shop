@@ -1,0 +1,42 @@
+// Alloy: Docker soketinden container'ları keşfeder, loglarını Loki'ye
+// gönderir ve container adını "container" label'ı olarak ekler.
+
+// 1) Docker daemon'dan çalışan container'ları keşfet.
+discovery.docker "containers" {
+	host             = "unix:///var/run/docker.sock"
+	refresh_interval = "15s"
+}
+
+// 2) Meta label'ları kalıcı label'lara çevir.
+discovery.relabel "containers" {
+	targets = discovery.docker.containers.targets
+
+	// __meta_docker_container_name "/isim" biçiminde gelir; baştaki "/" atılır.
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = "/(.*)"
+		target_label  = "container"
+	}
+
+	// Compose servis adı (varsa) ayrı label olarak dursun.
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		target_label  = "compose_service"
+	}
+}
+
+// 3) Container loglarını oku ve Loki'ye ilet.
+loki.source.docker "containers" {
+	host          = "unix:///var/run/docker.sock"
+	targets       = discovery.relabel.containers.output
+	labels        = { job = "docker" }
+	relabel_rules = discovery.relabel.containers.rules
+	forward_to    = [loki.write.default.receiver]
+}
+
+// 4) Loki push endpoint'i (aynı Docker ağında servis adı).
+loki.write "default" {
+	endpoint {
+		url = "http://loki:3100/loki/api/v1/push"
+	}
+}

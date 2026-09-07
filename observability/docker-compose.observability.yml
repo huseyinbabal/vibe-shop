@@ -1,0 +1,84 @@
+# Gözlemlenebilirlik yığını (SPEC §14): Prometheus + Loki + Alloy + Grafana.
+#
+# Dokploy'da AYRI bir Compose servisi olarak, docker-compose.prod.yml'in yanında
+# çalışır. Her iki yığın da "vibe-shop" adlı Docker ağına bağlanır
+# (docker-compose.prod.yml içinde `networks.default.name: vibe-shop` ile
+# adlandırılır), böylece Prometheus doğrudan api:8080'e, Alloy da Docker
+# soketinden tüm container'lara erişebilir.
+#
+# Dokploy Environment ekranından gelmesi gereken değişkenler:
+#   GRAFANA_PASSWORD  - Grafana admin parolası (düz metin secret yok)
+#
+# Traefik/Dokploy alan adı yönlendirmesi Grafana'nın 3000 portuna yapılmalı.
+services:
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # retention prometheus.yml'de değil yalnızca CLI bayrağıyla ayarlanır.
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    expose:
+      - "9090"
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.3.2
+    # İmajla gelen local-config.yaml: filesystem depolama, veriler /loki altında.
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - loki-data:/loki
+    expose:
+      - "3100"
+    restart: unless-stopped
+
+  alloy:
+    image: grafana/alloy:v1.5.1
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=0.0.0.0:12345
+    volumes:
+      - ./config.alloy:/etc/alloy/config.alloy:ro
+      # Container keşfi + log okuma için salt-okunur Docker soketi.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy/data
+    depends_on:
+      - loki
+    expose:
+      - "12345"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      # Kayıt olma kapalı.
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+      - loki
+    expose:
+      - "3000"
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:
+  loki-data:
+  alloy-data:
+  grafana-data:
+
+# vibe-shop yığınının oluşturduğu ağa dışarıdan bağlan; tüm servisler
+# (Grafana <-> Prometheus/Loki dahil) burada birbirini servis adıyla görür.
+networks:
+  default:
+    name: vibe-shop
+    external: true
