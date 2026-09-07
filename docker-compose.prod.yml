@@ -103,7 +103,7 @@ volumes:
   vibeshop-prod-pg:
 
 # Varsayılan ağa sabit bir ad ver: observability yığını (bkz.
-# observability/docker-compose.observability.yml) bu ağa "external" olarak
+# docker-compose.observability.yml) bu ağa "external" olarak
 # bağlanıp api:8080'e ve Docker soketindeki container'lara erişir.
 networks:
   default:

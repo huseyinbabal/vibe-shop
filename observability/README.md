@@ -19,7 +19,10 @@ Prometheus (metrik) · Loki (log) · Alloy (log toplayıcı) · Grafana (panel).
 1. Önce `docker-compose.prod.yml` yığınını (yeniden) deploy et; `vibe-shop`
    ağı oluşur.
 2. Yeni bir **Compose** servisi ekle, compose yolu:
-   `observability/docker-compose.observability.yml`.
+   `docker-compose.observability.yml` (repo kökünde — Dokploy `${VAR}`
+   interpolasyonu için `.env`'i `--project-directory`'ye göre arıyor, ki bu
+   her zaman repo kökü; dosya alt klasörde olsaydı `GRAFANA_PASSWORD` boş
+   string'e düşerdi).
 3. Environment ekranına `GRAFANA_PASSWORD` gir.
 4. Grafana için bir domain tanımla → hedef port `3000`.
 
@@ -28,7 +31,7 @@ Prometheus (metrik) · Loki (log) · Alloy (log toplayıcı) · Grafana (panel).
 ```sh
 # vibe-shop ağı ayakta olmalı (prod compose çalışıyor olmalı)
 GRAFANA_PASSWORD=admin docker compose \
-  -f observability/docker-compose.observability.yml up -d
+  -f docker-compose.observability.yml up -d
 ```
 
 ## Not
