@@ -56,7 +56,6 @@ export default function LoginPage() {
           <CardContent className="px-8 py-6">
             <div className="mb-6 text-center">
               <h1 className="text-2xl font-bold tracking-tight">Giriş Yap</h1>
-              <p className="mt-1 text-muted-foreground">Hesabınla devam et</p>
             </div>
             <form onSubmit={onSubmit} className="space-y-4">
               <div className="space-y-2">
