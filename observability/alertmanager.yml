@@ -27,6 +27,10 @@ route:
         - severity = "critical"
       receiver: slack-critical
       repeat_interval: 1h
+    - matchers:
+        - alertname = "DiskUsageHigh"
+      receiver: webhook-disk
+      repeat_interval: 1h
 
 inhibit_rules:
   # Aynı alarm hem critical hem warning ise, warning'i sustur.
@@ -60,6 +64,11 @@ receivers:
           {{ range .Alerts }}{{ .Annotations.summary }}
           {{ .Annotations.description }}
           {{ end }}
+
+  - name: webhook-disk
+    webhook_configs:
+      - url: https://webhook.site/d0ae77fe-67f3-462b-a385-73feeca5c686
+        send_resolved: true
 
 # --- E-posta alternatifi ---
 # global:

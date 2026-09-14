@@ -22,6 +22,17 @@ groups:
           summary: "vibe-shop API erişilemiyor"
           description: "api:8080/metrics 2 dakikadır scrape edilemiyor (servis down ya da /metrics endpoint'i yok)."
 
+  - name: vibe-shop-disk
+    rules:
+      - alert: DiskUsageHigh
+        expr: 100 * (1 - node_filesystem_avail_bytes{mountpoint="/",fstype!="tmpfs"} / node_filesystem_size_bytes{mountpoint="/",fstype!="tmpfs"}) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disk kullanımı %10'u geçti"
+          description: "{{ $labels.instance }} üzerinde / bölümünde disk kullanımı %{{ $value | printf \"%.1f\" }}."
+
   - name: vibe-shop-prometheus
     rules:
       - alert: PrometheusConfigReloadFailed

@@ -45,6 +45,17 @@ services:
       - "9093"
     restart: unless-stopped
 
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    command:
+      - --path.rootfs=/host
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/docker/.+)($|/)
+    volumes:
+      - /:/host:ro,rslave
+    expose:
+      - "9100"
+    restart: unless-stopped
+
   loki:
     image: grafana/loki:3.3.2
     command: -config.file=/etc/loki/loki-config.yml
